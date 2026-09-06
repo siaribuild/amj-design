@@ -1,26 +1,17 @@
-## Conformance review — ops2-attention-prefilter
+All design-named paths exist, all "untouched on purpose" paths stayed untouched. Findings, most serious first:
 
-Verdict: **DOES NOT CONFORM — one blocking absence.** Premise correction first: I was called "once implementation passes testing", but `06-verify.md` records **FAIL** (F1, criteria 3/17 and the count criteria against a live worker). Not presenting this as post-green review.
+**1. Minor — `06-verify.md` names `scripts/tests-verify/web/attn-probe.spec.ts`; file absent from diff.** Only `abuse.mjs` and `live-rows.mjs` under `scripts/tests-verify/` were committed. Not a design-named artifact (design's five test files all landed), so not a conformance violation of my design — but verify report references evidence not in tree. Likely tester-worktree residue. Flag to conductor, don't block on it.
 
-### Finding 1 — HIGH, blocking: task t1 never built. Worker DTO fields absent, D1 approved and then not executed.
+**2. Note — two files built the design never named, both with good reason:**
+- `src/ops2/styles/projects.css` (+19 lines) — strip styling from polish stage. Design §3.3 specified strip behaviour, not its CSS; polish output, acceptable. No doc update needed.
+- `scripts/tests-verify/abuse.mjs`, `live-rows.mjs` — tester's live-probe artifacts per verify stage, not wired into `package.json` (checked; design's "no package.json change" holds). Acceptable.
 
-- Design clause violated: §0 ("Required: a two-field additive change to the row DTO"), §2 row 1, `02-tasks.json` t1, criterion 17 as amended by D1 (**answered A: YES** in DECISIONS.md — the block was lifted).
-- Evidence, structural: `git diff 4a1acc69...HEAD` contains **no `worker/` path and no `scripts/tests/api.test.mjs`**. Git log in range starts at t2 (`55cdb95f`); no t1 commit exists anywhere. `worker/routes/ops.ts:421–447` DTO map still returns no `statusCustomer` / `orderStage`; the only grep hit is line 409 — the `lifecycleOf()` argument object, the exact expression DECISIONS.md D1 warned reviewers about.
-- Consequence: design §0's own words — feature "does not meet criteria 1/2/4 end-to-end". `parseProjectQueue` defaults under-claim, so in production submissions / inReview / awaitingPayment count 0 forever; only readyToIssue (rides `issuable`) works. Test suites went green because every suite stubs the endpoint — the fixture supplies fields the real API never sends.
-- Aggravator: `04-build.md:18` claims "t1's worker DTO change was already committed/merged before this task started". False — undocumented shortcut, worse, misdocumented one.
-- Current tree: the t1 red test sits **uncommitted** in `scripts/tests/api.test.mjs` — red with no green, unattributable if anything else moves.
-- Fix (already specified by verify F1, matches design exactly): add `statusCustomer: r.status_customer, orderStage: r.order_stage ?? null` to the returned object in `worker/routes/ops.ts` `/projects` map; commit with the api.test.mjs test; `git diff -- worker/` must show nothing else (criterion 17). `?? null` on `orderStage` is load-bearing (D1 grounds) — must survive.
+**Everything else conforms:**
+- Design's 12-file hand-off index: all 12 in diff (11 M + ADR 0018 A). ✓
+- Criterion 17 held exactly: `worker/` diff is `worker/routes/ops.ts` only, 5 lines — the two D1-approved DTO fields plus rationale comment referencing DECISIONS.md. Comment matches house comment-density rule. ✓
+- Absence check: nothing design-named missing. All five named test files modified; `FilterSheet.tsx`, `rows.tsx`, `useProjectQueue.ts`, `useSummary.ts`, `worker/lib/*`, `seed.sql`, `migrations/` untouched as specified. ✓
+- t4's `chipFromSearch` deletion executed — zero references remain in `src/`. ✓
+- t6 landed: CONTEXT.md modified, ADR 0018 created. ✓
+- Sequencing artifacts (04-build, 05-polish, 06-verify, four 07-reviews) all present — pipeline ran full. ✓
 
-### Finding 2 — LOW: unattributed working-tree changes
-
-`src/ops2/styles/projects.css` and `src/ops2/projects/ProjectsPage.tsx` modified, uncommitted, not in the design's affected-files index. Presumably polish (§7 permits wording/styling refinement, not structure) — acceptable if that's their origin, but they must be committed and attributed before sign-off; right now the tree mixes polish, the orphan red test, and nothing that closes F1.
-
-### Everything else conforms
-
-- t2–t6 all landed at the designed seams: `queue.ts` carries `ATTENTION_FILTERS` / `attentionQuery` / `attentionFromSearch` / the selector pass; `chipFromSearch` deleted (zero references, per t4); `attention.ts` has `combineLoads` + `attentionGroups`; `AttentionPage` consumes both hooks through `combineLoads`; ProjectsPage consumes `?attn=`.
-- Nothing built the design didn't name (`04-build.md` is a pipeline artifact, fine).
-- Untouched-on-purpose list respected: `FilterSheet.tsx`, `rows.tsx`, `useProjectQueue.ts`, `useSummary.ts`, `worker/lib/*`, `/api/ops/summary`, `seed.sql` — all absent from the diff.
-- Vocabulary recorded: `CONTEXT.md` updated, `docs/adr/0018-queue-attention-prefilter-own-axis.md` created.
-- Logic placement: model logic in `queue.ts`/`attention.ts`, not smeared into components — conforms.
-
-**Route to developer:** commit t1 (worker two-liner + api.test.mjs green), commit/attribute the polish files, re-run verify. No design change needed — the design already said all of this; it was skipped, not superseded.
+**Verdict: CONFORMS.** Finding 1 for conductor follow-up (attn-probe spec file referenced but uncommitted); finding 2 needs no action.

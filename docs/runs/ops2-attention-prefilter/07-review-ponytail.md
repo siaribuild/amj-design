@@ -1,29 +1,19 @@
-Reviewed. Report:
+`scripts/tests-verify/abuse.mjs:L1-124` + `live-rows.mjs:L1-43`: `delete:` 167 lines of one-shot tester probes committed permanently — no npm script runs them, only `06-verify.md` mentions them, and `abuse.mjs` hand-rolls a cookie jar + `sourceIp()` its own comment says `scripts/tests/helpers.mjs` already ships. The abuse cases they cover are already asserted in `ops2-projects.test.mjs:L471-478`. Nothing replaces them; keep the evidence in `06-verify.md`.
 
-## ponytail-review — `4a1acc69..HEAD` (ops2-attention-prefilter)
+`src/ops2/attention/attention.ts:L129-153`: `shrink:` the refactor grew — `GROUP_SPECS` used to drive all three groups through one loop; now Enquiries and Customers are two near-identical 12-line hand-written blocks. Keep a 2-entry spec array (`{id, key, noun}`) and loop it, `projectRows()` pushed first. ~12 lines.
 
-**`src/ops2/attention/attention.ts`:L110-152: shrink: `attentionGroups` replaced a data table with two hand-written blocks that are structurally identical.** The refactor was right to split projects (derived) from summary (pass-through), but the enquiries and customers blocks are the same shape twice — group id, `destination(id).label`, one row, one count, one noun, one href. 25 lines. Restore the spec list for the summary half only:
+`src/ops2/projects/queue.ts:L650-651`: `shrink:` `ATTENTION_FILTERS.find()` runs once **per row** inside the `.filter` callback, and this file already has `REFINEMENT_BY_KEY` / `CHIP_BY_KEY` for exactly this. Add `ATTENTION_BY_KEY`, hoist `const attn = query.attention ? ATTENTION_BY_KEY.get(query.attention)! : null` above the chain — also kills the duplicate `.find()`+`!` at `queue.ts:L377` and `ProjectsPage.tsx:L168`.
 
-```ts
-const SUMMARY_GROUPS: readonly { id: DestinationId; key: keyof SummaryCounts; noun: (n: number) => string }[] = [
-  { id: "enquiries", key: "newEnquiries", noun: () => "waiting for a reply" },
-  { id: "customers", key: "tradeApplications", noun: (n) => `trade application${n === 1 ? "" : "s"} waiting on a decision` },
-];
-for (const g of SUMMARY_GROUPS) {
-  const count = counts[g.key];
-  if (count === 0) continue;
-  groups.push({ id: g.id, label: destination(g.id).label, rows: [{ key: g.key, count, noun: g.noun(count), href: destination(g.id).path }] });
-}
-```
+`src/ops2/projects/ProjectsPage.tsx:L104-113` + `L133-139`: `shrink:` two effects over the same location, one ref between them. Merge into one — apply branch when `has("attn")` (it `history.replace`s the param away, so the next run falls through to the reset branch and the key matches). Same logic, ~8 lines.
 
-**`attention.ts`:L84-89 + `queue.ts`:L163-172: yagni: two tables keyed by the same closed `AttentionKey` set, in two files, holding the same fact.** `ATTENTION_FILTERS[].label` is `"New submissions" | "Being priced" | "Ready to issue" | "Awaiting payment"`; `PROJECT_NOUNS` is those same four strings lowercased, three of them character-for-character apart from case. Adding a fifth attention key means editing two files or the page renders a label with no noun. Put `noun` on `ATTENTION_FILTERS` beside `label` and delete `PROJECT_NOUNS` — the filters table already lives in `queue.ts` as the Attention gate's own registry, so it is the one place. −7.
+`src/ops2/attention/attention.ts:L84-89`: `shrink:` `Record<AttentionKey, (count: number) => string>` where three of four thunks ignore their argument. `Record<AttentionKey, string>` + pluralise `submissions` at the one call site (`L105`). ~3 lines.
 
-**`queue.ts`:L650-651: shrink: `.find()` runs per row inside the filter, and the same `ATTENTION_FILTERS.find(...)!` appears three times across two files** (`selectProjects`, `emptyStateFor`:L377, `ProjectsPage`:L128). The file already has this exact pattern solved two ways above — `CHIP_BY_KEY`, `REFINEMENT_BY_KEY`, plus the hoist-before-the-pipeline done for `refinements` on L642. Add `const ATTENTION_BY_KEY = new Map(ATTENTION_FILTERS.map((f) => [f.key, f]))` beside its two siblings; the filter becomes one line and the three non-null assertions become `.get()`. −2.
+`src/ops2/attention/attention.ts:L25,L38-43`: `shrink:` a `SUMMARY_KEYS` array and a loop for two fields. `const {newEnquiries, tradeApplications} = record; if (![newEnquiries, tradeApplications].every(Number.isFinite)) return "degraded";` — `Number.isFinite` is false for any non-number, so the type check comes free. ~4 lines.
 
-**`ProjectsPage.tsx`:L392-396: shrink: ternary picks between two joins of the same array.** One line: `<span>{(attentionLabel ? "+ " : "") + activeRefinements.join(" + ")}</span>`. −2.
+`src/ops2/attention/attention.ts:L61-62`: `shrink:` two returns of the same value. `if (summary.status === "unauthorised" || summary.status === "error") return summary;` 1 line.
 
-**`ProjectsPage.tsx`:L379-381 + `projects.css`:L312-322: yagni: a wrapper element and a new class for what the parent flex row already does.** `.pq-active` is already `display:flex; align-items:center; gap`. Adding `flex-wrap: wrap` to it and `margin-left:auto` to the Clear button (dropping `justify-content: space-between`) removes `.pq-active__names` entirely. Lower confidence than the others — the wrapper does buy "Clear never wraps to its own line," which `margin-left:auto` on a wrapping parent does not guarantee. If that 375px behaviour was verified deliberately, keep it and skip this. −9 if it goes.
+Not in the diff, but sitting in the tree: untracked `playwright.verify.config.ts` — same one-shot-verify residue as `tests-verify/`. Decide once for both.
 
-Not flagged, deliberately: `combineLoads` (5 lines, one caller, but it is precedence logic tested without React — earns the seam); `attentionQuery` (two callers); the `useIonViewWillEnter` + `locationRef` reset (design §3.3 point 3, explicitly requested); the four-payload injection loop in `ops2-projects.spec.ts` (trust-boundary validation — never the shortest diff); `attentionFromSearch` (a like-for-like replacement of the deleted `chipFromSearch`, already net-neutral).
+Not flagged: the F2/F4 post-mortem comments in `ProjectsPage.tsx:L96-130`. Long, and duplicated in `a6ffc24d`'s message, but house rule says rationale comments stay and that one bought two failed fixes.
 
-`net: -31 lines possible.` (−22 excluding the CSS wrapper item.)
+`net: -195 lines possible.`

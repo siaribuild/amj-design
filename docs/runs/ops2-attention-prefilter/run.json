@@ -112,30 +112,30 @@
     },
     "review-security": {
       "code": 0,
-      "contextTokens": 487461,
-      "outputTokens": 3711,
+      "contextTokens": 484781,
+      "outputTokens": 3843,
       "turns": 6,
       "source": "transcript",
-      "session": "f1ca2d1c-0445-4bfd-b816-02ad130efe8c",
-      "seconds": 119
+      "session": "8df9ad40-9a0a-4414-89f6-f4f05f249dfa",
+      "seconds": 164
     },
     "review-conformance": {
       "code": 0,
-      "contextTokens": 434450,
-      "outputTokens": 5954,
-      "turns": 9,
+      "contextTokens": 126648,
+      "outputTokens": 3427,
+      "turns": 3,
       "source": "transcript",
-      "session": "7756ed9c-a88e-4f47-b532-955d3b523cde",
-      "seconds": 134
+      "session": "9c279806-cf51-420e-af3d-1a3e90be75d1",
+      "seconds": 112
     },
     "review-ponytail": {
       "code": 0,
-      "contextTokens": 623911,
-      "outputTokens": 7244,
+      "contextTokens": 643172,
+      "outputTokens": 6557,
       "turns": 8,
       "source": "transcript",
-      "session": "95533196-2b5d-4918-9cdc-304faa0e4600",
-      "seconds": 163
+      "session": "3b75f58a-3bed-42c3-bb06-ff6db903ef13",
+      "seconds": 182
     },
     "review-codex": {
       "code": 0,
