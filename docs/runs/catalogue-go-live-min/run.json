@@ -1,0 +1,208 @@
+{
+  "slug": "catalogue-go-live-min",
+  "tier": "full",
+  "base": "d8f994aa",
+  "branch": "feat/catalogue-go-live-min",
+  "ui": false,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 347670,
+      "outputTokens": 14429,
+      "turns": 7,
+      "source": "transcript",
+      "session": "6ff50a1b-181d-4fe4-ae1c-d9141db66b6d",
+      "seconds": 212,
+      "status": "done"
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 772174,
+      "outputTokens": 28285,
+      "turns": 13,
+      "source": "transcript",
+      "session": "2d239f50-6b5b-4b7a-a3cc-0da16233086f",
+      "seconds": 653
+    },
+    "build-T1": {
+      "code": 0,
+      "contextTokens": 2399625,
+      "outputTokens": 67162,
+      "turns": 32,
+      "source": "transcript",
+      "session": "7d53076a-e941-40a8-8341-60ce7ee313e1",
+      "seconds": 1572
+    },
+    "build-T2": {
+      "code": 0,
+      "contextTokens": 4430543,
+      "outputTokens": 28797,
+      "turns": 59,
+      "source": "transcript",
+      "session": "b802fe74-d525-4af6-b258-64674288bf53",
+      "seconds": 1104
+    },
+    "build-T3": {
+      "code": 0,
+      "contextTokens": 7687144,
+      "outputTokens": 34544,
+      "turns": 100,
+      "source": "transcript",
+      "session": "bea76a12-cd69-404d-b4e4-c767893f788a",
+      "seconds": 1550
+    },
+    "build-T4": {
+      "code": 0,
+      "contextTokens": 7004934,
+      "outputTokens": 69534,
+      "turns": 92,
+      "source": "transcript",
+      "session": "5e27e142-4a26-4968-aa47-8678050a0ee0",
+      "seconds": 2362
+    },
+    "build-T5": {
+      "code": 0,
+      "contextTokens": 3976573,
+      "outputTokens": 17247,
+      "turns": 54,
+      "source": "transcript",
+      "session": "c12a0999-65e7-403b-bc07-2f834fbb7915",
+      "seconds": 773
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "verify": {
+      "code": 0,
+      "contextTokens": 5586830,
+      "outputTokens": 62844,
+      "turns": 75,
+      "source": "transcript",
+      "session": "66036d7a-7188-48b3-bd9f-9d83b0f2f25d",
+      "seconds": 2543
+    },
+    "review-security": {
+      "code": 0,
+      "contextTokens": 549216,
+      "outputTokens": 5102,
+      "turns": 5,
+      "source": "transcript",
+      "session": "9982a334-b90e-4436-81d9-dd44bcbb13d6",
+      "seconds": 142
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 277552,
+      "outputTokens": 5217,
+      "turns": 6,
+      "source": "transcript",
+      "session": "a346dd6c-301f-4609-bab3-78b8cf88377f",
+      "seconds": 132
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 822735,
+      "outputTokens": 11916,
+      "turns": 8,
+      "source": "transcript",
+      "session": "47b8115a-197e-4c5f-a50e-de7b84c607e0",
+      "seconds": 363
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
+    },
+    "accept": {
+      "code": 0,
+      "contextTokens": 440777,
+      "outputTokens": 9054,
+      "turns": 9,
+      "source": "transcript",
+      "session": "185d0b7a-a0de-4099-bacd-4ed98de09b02",
+      "seconds": 245
+    },
+    "fix-0": {
+      "code": 1,
+      "contextTokens": 602425,
+      "outputTokens": 1808,
+      "turns": 9,
+      "source": "transcript",
+      "session": "9ea3f3d3-0b48-45bb-b995-545e0f30c2a1",
+      "seconds": 421
+    },
+    "fix-1": {
+      "code": 0,
+      "contextTokens": 11641005,
+      "outputTokens": 85500,
+      "turns": 148,
+      "source": "transcript",
+      "session": "074c4f14-f955-4ac3-b99e-1bfdc7aa35f8",
+      "seconds": 5439
+    },
+    "fix-2": {
+      "code": 0,
+      "contextTokens": 7846219,
+      "outputTokens": 57488,
+      "turns": 101,
+      "source": "transcript",
+      "session": "dbb91edb-ac96-420a-8cbb-98da11aeac53",
+      "seconds": 2090
+    },
+    "fix-3": {
+      "code": 0,
+      "contextTokens": 4293340,
+      "outputTokens": 40963,
+      "turns": 56,
+      "source": "transcript",
+      "session": "99ff5f4e-691e-40c6-9b0b-99ecbecf7720",
+      "seconds": 1730
+    }
+  },
+  "tasksDone": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5"
+  ],
+  "startedAt": "2026-09-05T17:56:24.612Z",
+  "gateStage": null,
+  "verifyRounds": 2,
+  "fixRounds": 3,
+  "capLifted": [
+    {
+      "stage": "verify",
+      "from": 2,
+      "to": 1,
+      "at": "2026-09-06T00:02:08.330Z",
+      "why": "owner asked for the regular pipeline and gates on this work; one tester round after fix round 2 is more verification, not less. Conductor session, on the owner's behalf."
+    },
+    {
+      "stage": "fix",
+      "from": 3,
+      "to": 2,
+      "at": "2026-09-06T01:03:48.095Z",
+      "why": "review round 3 (Codex) found a production-blocking defect in rate-cards.sql (INSERT collides with cards production already holds) after the third fix session; the owner asked for the regular pipeline and gates, so the finding goes to a developer session rather than being patched inline. Conductor session, on the owner's behalf."
+    }
+  ]
+}
