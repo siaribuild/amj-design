@@ -384,3 +384,29 @@ test("SidePanel: the phone sheet scrolls its own content, so a tall panel's last
   assert.match(prop, /\bsheet\b/,
     "scoped to the sheet form: the side and screen forms are already full height and pass no breakpoints at all");
 });
+
+test("the filter panel's footer pinning is asked for by NAME, not guessed from SidePanel's insides", () => {
+  // REVIEW FINDING 3 (P2, 07-review-architecture.md). The pinning was scoped
+  // with `:has(ion-list)` — identifying the caller by what its children happen
+  // to be, through a shared component whose internals it does not own. Two ways
+  // that breaks without anyone touching the filter: the next list-backed panel
+  // inherits a sticky footer nobody asked for, and a markup change inside
+  // `SidePanel` silently unpins this one. The caller names itself instead, and
+  // the stylesheet targets the name.
+  // Comments stripped, not searched: the rule this replaced is NAMED in the
+  // stylesheet's own rationale, and that comment is the thing stopping it
+  // coming back.
+  const css = read("src/ops2/styles/projects.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.ok(!css.includes(":has(ion-list)"),
+    "no rule may identify a panel by the elements inside it — that is SidePanel's markup, not this stylesheet's");
+  assert.match(css, /\.pq-sheet--side\.pq-sheet--filters\b/,
+    "the desk pinning is scoped to the filter panel by its own class");
+
+  const filter = read("src/ops2/projects/FilterSheet.tsx");
+  assert.match(filter, /panelClass="pq-sheet--filters"/,
+    "and the filter is what declares it, so the class travels with the caller");
+
+  const panel = read("src/ops2/chrome/SidePanel.tsx");
+  assert.match(panel, /panelClass/,
+    "SidePanel carries the caller's class through — an explicit seam, not a DOM guess");
+});

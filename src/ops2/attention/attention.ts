@@ -84,7 +84,7 @@ export type AttentionGroup = {
 const PROJECT_NOUNS: Record<AttentionKey, (count: number) => string> = {
   submissions: (n) => `new submission${n === 1 ? "" : "s"}`,
   inReview: () => "being priced",
-  readyToIssue: () => "ready to issue",
+  ready: () => "ready to issue",
   awaitingPayment: () => "awaiting payment",
 };
 
@@ -96,14 +96,14 @@ const PROJECT_NOUNS: Record<AttentionKey, (count: number) => string> = {
  */
 function projectRows(rows: readonly ProjectQueueRow[]): AttentionRow[] {
   const rowsOut: AttentionRow[] = [];
-  for (const filter of ATTENTION_ARRIVALS) {
-    const count = selectProjects(rows, arrivalQuery(filter.key)).length;
+  for (const key of ATTENTION_ARRIVALS) {
+    const count = selectProjects(rows, arrivalQuery(key)).length;
     if (count === 0) continue;
     rowsOut.push({
-      key: filter.key,
+      key,
       count,
-      noun: PROJECT_NOUNS[filter.key](count),
-      href: `${destination("projects").path}?attn=${filter.key}`,
+      noun: PROJECT_NOUNS[key](count),
+      href: `${destination("projects").path}?attn=${key}`,
     });
   }
   return rowsOut;

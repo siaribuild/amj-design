@@ -446,18 +446,18 @@ test("the Attention gate's four predicates select exactly what they claim, over 
 
   assert.deepEqual(refsFor("submissions"), ["PA"]);
   assert.deepEqual(refsFor("inReview"), ["PB", "PC"]);
-  assert.deepEqual(refsFor("readyToIssue"), ["PC"]);
+  assert.deepEqual(refsFor("ready"), ["PC"]);
   assert.deepEqual(refsFor("awaitingPayment"), ["PD", "PE"]);
 
   // PF matches none — proves narrowing (criterion 5).
-  for (const key of ["submissions", "inReview", "readyToIssue", "awaitingPayment"]) {
+  for (const key of ["submissions", "inReview", "ready", "awaitingPayment"]) {
     assert.ok(!refsFor(key).includes("PF"), `PF must not appear in ${key}`);
   }
 
-  // readyToIssue is the gate's own verdict, not a re-derivation: it always
+  // `ready` is the gate's own verdict, not a re-derivation: it always
   // equals rows.filter(issuable), whatever else a row claims.
   assert.deepEqual(
-    refsFor("readyToIssue"),
+    refsFor("ready"),
     rows.filter((r) => r.issuable).map((r) => r.ref),
   );
 });
@@ -475,7 +475,7 @@ test("emptyStateFor explains an arrival whose set moved on, as an ordinary named
 
 test("attentionFromSearch validates against the closed key set — bogus, injected or oversized input is null", () => {
   assert.equal(M.attentionFromSearch("?attn=submissions"), "submissions");
-  assert.equal(M.attentionFromSearch("?attn=readyToIssue"), "readyToIssue");
+  assert.equal(M.attentionFromSearch("?attn=ready"), "ready");
   assert.equal(M.attentionFromSearch("?attn=bogus"), null, "not one of ATTENTION_ARRIVALS' own keys");
   assert.equal(M.attentionFromSearch("?attn=' OR '1'='1"), null, "SQL fragment");
   assert.equal(M.attentionFromSearch("?attn=<script>alert(1)</script>"), null, "script payload");
@@ -520,24 +520,6 @@ test("REFINEMENTS holds six entries, one 'Ready to issue', in the panel's order 
   assert.equal(labels.filter((l) => l === "Ready to issue").length, 1, "exactly one, not the old duplicate");
 });
 
-test("the attention axis is gone from the model's own source, not just its exports (criterion 18)", () => {
-  // Scoped to queue.ts, this task's only source file — ProjectsPage.tsx and
-  // attention.ts still call the old names until the tasks that touch them
-  // land; the whole-directory purge is those tasks' pin, not this one's.
-  const stripComments = (text) => text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
-  const code = stripComments(read("src/ops2/projects/queue.ts"));
-  for (const banned of ["ATTENTION_FILTERS", "attentionQuery", "attentionStates"]) {
-    assert.ok(!code.includes(banned), `queue.ts still has ${banned} in code (not just a comment)`);
-  }
-  const queryDecl = code.slice(
-    code.indexOf("interface QueueQuery"),
-    code.indexOf("}", code.indexOf("interface QueueQuery")),
-  );
-  assert.ok(!queryDecl.includes("attention"), "QueueQuery no longer carries an attention field");
-});
-
 test("every arrival's card count equals the panel's own count for the mapped refinement (criterion 19)", () => {
   const rows = [
     row({ ref: "PA", statusCustomer: "submitted", issuable: false, orderStage: null }),
@@ -548,10 +530,10 @@ test("every arrival's card count equals the panel's own count for the mapped ref
     row({ ref: "PF", statusCustomer: "accepted", issuable: false, orderStage: "manufacturing" }),
   ];
   const panelCounts = M.refinementStates(rows, { chip: "all", refinements: [], search: "" });
-  for (const arrival of M.ATTENTION_ARRIVALS) {
-    const cardCount = M.selectProjects(rows, M.arrivalQuery(arrival.key)).length;
-    const panelCount = panelCounts.find((c) => c.key === arrival.refinement).count;
-    assert.equal(cardCount, panelCount, `${arrival.key}: card and panel must never disagree`);
+  for (const key of M.ATTENTION_ARRIVALS) {
+    const cardCount = M.selectProjects(rows, M.arrivalQuery(key)).length;
+    const panelCount = panelCounts.find((c) => c.key === key).count;
+    assert.equal(cardCount, panelCount, `${key}: card and panel must never disagree`);
   }
 });
 
@@ -582,4 +564,26 @@ test("ProjectsPage: leaving the queue ends the arrival there and then, with no r
     "no return-time protocol: nothing may be left for the return trip to consume");
   assert.ok(!/boolean \| null/.test(code),
     "the ref is a plain boolean again — 'is an arrival standing?' is the only question left");
+});
+
+test("the Attention cards and the refinements are ONE key space — a card emits the refinement's own name (review finding 1)", () => {
+  // ADR 0020 says one axis, and `ATTENTION_ARRIVALS` was quietly growing a
+  // second: a `{ key, refinement }` table whose three first entries mapped a
+  // key to ITSELF, existing only because one card was spelled `readyToIssue`
+  // where its refinement is `ready`. That is the axis coming back as a naming
+  // convention — and the lookup it forced (`.find(...)!`) is a non-null
+  // assertion that compiles the day someone adds a fifth card and throws at
+  // runtime. The card emits `?attn=ready` instead and the table is a list.
+  assert.deepEqual(
+    [...M.ATTENTION_ARRIVALS],
+    ["submissions", "inReview", "ready", "awaitingPayment"],
+  );
+  const refinementKeys = new Set(M.REFINEMENTS.map((r) => r.key));
+  for (const key of M.ATTENTION_ARRIVALS) {
+    assert.ok(refinementKeys.has(key), `${key} must be a refinement's own key, not a name of its own`);
+    assert.deepEqual(M.arrivalQuery(key), { chip: "all", refinements: [key], search: "" });
+  }
+  assert.equal(M.attentionFromSearch("?attn=ready"), "ready");
+  assert.equal(M.attentionFromSearch("?attn=readyToIssue"), null,
+    "the alias is deleted, not aliased — there is nothing left to translate");
 });

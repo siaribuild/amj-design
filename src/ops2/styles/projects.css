@@ -392,17 +392,21 @@ ion-modal.pq-sheet--screen::part(content) { box-shadow: none; }
    control. `SidePanel` renders the footer INSIDE `ion-content`, so it followed
    the list wherever the list ended; with six controls instead of three that
    became a long way from the bottom edge on a 900px window.
-   SCOPED TO THE DESK PANEL WITH A LIST IN IT, which is the filter and only the
-   filter (`FilterSheet` is the sole `IonList` caller). The other callers'
-   footers are a caption and a confirm button under short content, and pinning
-   those would restyle record screens this feature never touched.
+   SCOPED TO THE FILTER PANEL BY THE NAME IT DECLARES — `panelClass` on
+   `SidePanel`, set in `FilterSheet.tsx`. It was `:has(ion-list)`, which
+   identified the caller by what it happened to put inside a SHARED component:
+   the next list-backed panel would have inherited this pinning by accident, and
+   a markup change inside `SidePanel` would have unpinned the filter silently.
+   The other callers' footers are a caption and a confirm button under short
+   content, and pinning those would restyle record screens this feature never
+   touched.
    THE PHONE SHEET IS DELIBERATELY NOT TOUCHED HERE: its footer is off the
    bottom of the window for a reason CSS cannot reach — see 05-polish.md. */
-.pq-sheet--side:has(ion-list) ion-content::part(scroll) {
+.pq-sheet--side.pq-sheet--filters ion-content::part(scroll) {
   display: flex;
   flex-direction: column;
 }
-.pq-sheet--side:has(ion-list) .pq-sheet__foot {
+.pq-sheet--side.pq-sheet--filters .pq-sheet__foot {
   margin-top: auto;
   /* Opaque and edged: once pinned it can have list under it at other heights. */
   position: sticky;
@@ -414,7 +418,7 @@ ion-modal.pq-sheet--screen::part(content) { box-shadow: none; }
    pinning above it costs the phone sheet nothing. Stretched full width the
    label centres itself, which reads as a dialog's primary action rather than
    the quiet exit it is. */
-.pq-sheet:has(ion-list) .pq-sheet__foot ion-button {
+.pq-sheet--filters .pq-sheet__foot ion-button {
   align-self: flex-start;
 }
 

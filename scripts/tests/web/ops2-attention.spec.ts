@@ -98,7 +98,7 @@ test("groups render with the endpoint's numbers and expose no mutating control",
   // 1/2/1/2 — not SUMMARY_STUB's stale legacy fields above (4/2/1/3).
   await expect(projects.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
   await expect(projects.getByTestId("attention-row-inReview")).toHaveText("2 being priced");
-  await expect(projects.getByTestId("attention-row-readyToIssue")).toHaveText("1 ready to issue");
+  await expect(projects.getByTestId("attention-row-ready")).toHaveText("1 ready to issue");
   await expect(projects.getByTestId("attention-row-awaitingPayment")).toHaveText("2 awaiting payment");
   await expect(enquiries.getByTestId("attention-row-newEnquiries")).toHaveText("2 waiting for a reply");
   await expect(customers.getByTestId("attention-row-tradeApplications")).toHaveText(
@@ -127,7 +127,7 @@ test("project row counts come from the rows fixture, never the summary's stale p
 
   await expect(page.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
   await expect(page.getByTestId("attention-row-inReview")).toHaveText("2 being priced");
-  await expect(page.getByTestId("attention-row-readyToIssue")).toHaveText("1 ready to issue");
+  await expect(page.getByTestId("attention-row-ready")).toHaveText("1 ready to issue");
   await expect(page.getByTestId("attention-row-awaitingPayment")).toHaveText("2 awaiting payment");
   await expect(page.getByText("999", { exact: true })).toHaveCount(0);
 });
@@ -140,7 +140,7 @@ test("project row counts come from the rows fixture, never the summary's stale p
 const NARROWING_CASES: { key: string; expected: string[] }[] = [
   { key: "submissions", expected: ["PA"] },
   { key: "inReview", expected: ["PB", "PC"] },
-  { key: "readyToIssue", expected: ["PC"] },
+  { key: "ready", expected: ["PC"] },
   { key: "awaitingPayment", expected: ["PD", "PE"] },
 ];
 
@@ -244,7 +244,7 @@ test("a fixture with no row matching a predicate draws no row for it", async ({ 
 
   await expect(page.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
   await expect(page.getByTestId("attention-row-inReview")).toHaveCount(0);
-  await expect(page.getByTestId("attention-row-readyToIssue")).toHaveCount(0);
+  await expect(page.getByTestId("attention-row-ready")).toHaveCount(0);
   await expect(page.getByTestId("attention-row-awaitingPayment")).toHaveCount(0);
 });
 

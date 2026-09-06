@@ -210,3 +210,100 @@ The P0 fix in particular changes runtime layout behaviour inside Ionic's sheet
 gesture, and only a real 375×667 viewport proves the last refinement and the
 footer are clickable. Treat this fix as implemented-and-unverified until that run
 is on record.
+
+## Fix round 2 — three quality findings (ponytail + architecture P2/P3)
+
+No behaviour change was intended or made; the 62 browser tests and the node
+battery are the arbiter, and both are green (below).
+
+### 1. One key space, not two (ponytail yagni + architecture P3)
+
+`ATTENTION_ARRIVALS` was a `{ key, refinement }` table in which three of the
+four entries mapped a key to itself. The whole table — and the separate
+`AttentionKey` union — existed because one card was spelled `readyToIssue`
+where its refinement is `ready`. ADR 0020 says one axis; a second key space
+with a single alias in it is that axis growing back as a naming convention.
+
+The card emits `?attn=ready` now, and the mapping collapses:
+
+- `src/ops2/projects/queue.ts` — `ATTENTION_ARRIVALS` is
+  `["submissions", "inReview", "ready", "awaitingPayment"] as const satisfies
+  readonly RefinementKey[]`; `AttentionKey` is derived from it
+  (`typeof ATTENTION_ARRIVALS[number]`), so a fifth card is a compile error
+  rather than a runtime throw. `arrivalQuery` is a one-liner and the
+  `.find(...)!` non-null assertion — architecture P3's finding — is gone with
+  it. `attentionFromSearch` is an `.includes()`.
+- `src/ops2/attention/attention.ts` — `PROJECT_NOUNS.readyToIssue` → `.ready`;
+  the `projectRows` loop iterates keys rather than entries; the href is
+  `?attn=${key}`. The rendered noun ("ready to issue") is unchanged.
+
+Red first: `scripts/tests/ops2-projects.test.mjs` — "the Attention cards and
+the refinements are ONE key space…". Watched fail on the old table shape, then
+pass. It also pins `attentionFromSearch("?attn=readyToIssue") === null`: the
+alias is deleted, not translated.
+
+Assertions updated to the collapsed key, per the finding:
+`ops2-projects.test.mjs`, `ops2-attention.test.mjs`,
+`web/ops2-projects.spec.ts` (`?attn=ready`, two places) and
+`web/ops2-attention.spec.ts` (`attention-row-ready`, and the narrowing case).
+`SUMMARY_STUB.readyToIssue` in the browser fixture stays: that is the SERVER's
+stale legacy summary field, and the test's whole point is that the page does
+not read it.
+
+### 2. The filter styling stops reaching through SidePanel (architecture P2)
+
+`projects.css` identified `FilterSheet` with `:has(ion-list)` — the caller
+named by what it happens to put inside a shared component. Two ways that
+breaks with nobody touching the filter: the next list-backed panel inherits
+the sticky footer by accident, and a markup change inside `SidePanel` silently
+unpins this one.
+
+- `src/ops2/chrome/SidePanel.tsx` — new optional `panelClass`, appended to the
+  form classes on the modal. Documented as the seam it is.
+- `src/ops2/projects/FilterSheet.tsx` — declares `panelClass="pq-sheet--filters"`.
+  Not `testId`: styling a test handle would make the tests load-bearing for the
+  look.
+- `src/ops2/styles/projects.css` — the three rules target
+  `.pq-sheet--side.pq-sheet--filters` / `.pq-sheet--filters`. The rationale
+  comment names the rule it replaced, so it cannot come back quietly.
+
+Red first: `scripts/tests/ops2-frame.test.mjs` — "the filter panel's footer
+pinning is asked for by NAME…". Watched fail on `:has(ion-list)` still being
+in the stylesheet, then pass. It strips CSS comments before searching, for the
+reason above.
+
+### 3. Deleted the source-grep test (ponytail delete)
+
+`scripts/tests/ops2-projects.test.mjs`'s "the attention axis is gone from the
+model's own source" is gone. It was a source-text grep with a hand-rolled
+comment stripper, asserting that symbols no longer exist to be imported and
+that a field TypeScript has already removed from `QueueQuery` is absent. Its
+own comment scoped it to "until the tasks that touch them land", and they
+landed. `typecheck:gate` plus the tests that actually call `arrivalQuery` and
+`refinementStates` cover criterion 18. Nothing replaces it.
+
+### Verification — browser suite RUN this time
+
+- `npx playwright test scripts/tests/web/ops2-projects.spec.ts
+  scripts/tests/web/ops2-attention.spec.ts` — **62 passed, exit 0** (1.9m).
+  The ports were free this round, so the pending browser verification recorded
+  at the end of fix round 1 is now on record too.
+- `npm run test:ops2` — 146/146, exit 0.
+- `npm run typecheck:gate` — clean, exit 0 (pre-existing non-fatal counts
+  unchanged).
+
+### The two documents that asserted the old key strings
+
+Both had to move with the code, or the collapse would have shipped contradicted
+by its own record:
+
+- `CONTEXT.md` §Attention arrival — the closed key set now reads
+  `submissions` / `inReview` / `ready` / `awaitingPayment`, and the
+  "`readyToIssue` → the existing `ready`" translation clause is gone with the
+  translation.
+- `docs/adr/0020` — its decision list said `?attn=<key>` "keeps its key strings
+  (Attention's links are untouched)", which is the ONE clause that kept the
+  second key space alive. Amended in place, with an `## Amendment, at review`
+  section recording that the reviews caught it and why the retained strings
+  contradicted the ADR's own one-axis decision rather than supporting it.
+  Flagged for the architect, who owns both documents.

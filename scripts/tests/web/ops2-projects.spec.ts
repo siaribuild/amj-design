@@ -218,7 +218,7 @@ test("leaving the queue ends the arrival on departure, not on the way back", asy
 });
 
 test("a valid ?attn= narrows to its set, and the strip's Clear returns to Needs us", async ({ page }) => {
-  // Design §3.3, contract points 1 and 4. `readyToIssue` reads the server's
+  // Design §3.3, contract points 1 and 4. `ready` reads the server's
   // own `issuable` verdict — one row true, one false — so the narrowing is
   // real rather than incidental.
   await page.route(QUEUE_URL, (route) => route.fulfill({
@@ -228,7 +228,7 @@ test("a valid ?attn= narrows to its set, and the strip's Clear returns to Needs 
     ] },
   }));
 
-  await page.goto(`${PROJECTS}?attn=readyToIssue`);
+  await page.goto(`${PROJECTS}?attn=ready`);
   // The param is stripped — a one-shot instruction, not a bookmarkable state.
   await expect(page).toHaveURL(PROJECTS);
   await expect(page.getByTestId("queue-active-filters")).toContainText("Ready to issue");
@@ -277,7 +277,7 @@ test("?attn=bogus and injection payloads render the default set, nothing echoed"
   }
 });
 
-test("signed out, ?attn=readyToIssue hits the same wall as every other visit and shows no rows", async ({ browser }) => {
+test("signed out, ?attn=ready hits the same wall as every other visit and shows no rows", async ({ browser }) => {
   // Test plan criterion 18. A fresh context, none of the file's `beforeEach`
   // cookies: `GET /api/ops/projects` refuses with 403 regardless of the query
   // string — the parameter is consumed client-side over rows already fetched,
@@ -285,7 +285,7 @@ test("signed out, ?attn=readyToIssue hits the same wall as every other visit and
   // refusal surface as an authenticated non-staff account, not a filtered list.
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto(`${PROJECTS}?attn=readyToIssue`);
+  await page.goto(`${PROJECTS}?attn=ready`);
   await expect(page.getByTestId("queue-error")).toBeVisible();
   await expect(page.getByTestId("queue-row")).toHaveCount(0);
   await context.close();

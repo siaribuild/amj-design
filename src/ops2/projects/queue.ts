@@ -95,9 +95,6 @@ export interface QueueQuery {
 export type RefinementKey =
   | "submissions" | "inReview" | "ready" | "awaitingPayment" | "unresolved" | "production";
 
-/** The Attention gate's four project groups. */
-export type AttentionKey = "submissions" | "inReview" | "readyToIssue" | "awaitingPayment";
-
 /**
  * The chips — WHO IS WAITING, which is the question the queue exists to answer,
  * and the only axis that stays visible without a tap.
@@ -161,15 +158,22 @@ const REFINEMENT_BY_KEY = new Map(REFINEMENTS.map((r) => [r.key, r]));
 const CHIP_BY_KEY = new Map(WAIT_CHIPS.map((c) => [c.key, c]));
 
 /**
- * The Attention gate's four cards, mapped to the refinement each one now sets.
- * `readyToIssue` maps to `ready` — same predicate, one entry, not two.
+ * The Attention gate's four cards — WHICH REFINEMENTS THEY ARE, not a key
+ * space of their own. ADR 0020 says one axis, so a card names the refinement
+ * it sets and `?attn=` carries that name unchanged.
+ *
+ * This was a `{ key, refinement }` mapping table, and three of its four entries
+ * mapped a key to itself: the whole table existed because one card was spelled
+ * `readyToIssue` where its refinement is `ready`. That is the second axis
+ * growing back as a naming convention — and the lookup it needed carried a
+ * non-null assertion that would compile, then throw, the day a fifth card
+ * arrived without an entry.
  */
-export const ATTENTION_ARRIVALS: readonly { key: AttentionKey; refinement: RefinementKey }[] = [
-  { key: "submissions", refinement: "submissions" },
-  { key: "inReview", refinement: "inReview" },
-  { key: "readyToIssue", refinement: "ready" },
-  { key: "awaitingPayment", refinement: "awaitingPayment" },
-];
+export const ATTENTION_ARRIVALS = [
+  "submissions", "inReview", "ready", "awaitingPayment",
+] as const satisfies readonly RefinementKey[];
+
+export type AttentionKey = typeof ATTENTION_ARRIVALS[number];
 
 /**
  * The exact state an Attention row's press produces. `chip: "all"` so the
@@ -177,8 +181,7 @@ export const ATTENTION_ARRIVALS: readonly { key: AttentionKey; refinement: Refin
  * `awaitingPayment` (those rows are waitingOn Customer).
  */
 export function arrivalQuery(key: AttentionKey): QueueQuery {
-  const refinement = ATTENTION_ARRIVALS.find((a) => a.key === key)!.refinement;
-  return { chip: "all", refinements: [refinement], search: "" };
+  return { chip: "all", refinements: [key], search: "" };
 }
 
 /**
@@ -188,7 +191,7 @@ export function arrivalQuery(key: AttentionKey): QueueQuery {
  */
 export function attentionFromSearch(search: string): AttentionKey | null {
   const key = new URLSearchParams(search).get("attn");
-  return ATTENTION_ARRIVALS.some((a) => a.key === key) ? (key as AttentionKey) : null;
+  return ATTENTION_ARRIVALS.includes(key as AttentionKey) ? (key as AttentionKey) : null;
 }
 
 /**

@@ -50,7 +50,7 @@ test.after(async () => {
 
 // A registered pathname for every destination, per criterion 7.
 const REGISTERED_PATHS = new Set(DESTINATIONS.map((d) => d.path));
-const ATTENTION_KEYS = new Set(ATTENTION_ARRIVALS.map((a) => a.key));
+const ATTENTION_KEYS = new Set(ATTENTION_ARRIVALS);
 
 /** A row in the shape `GET /api/ops/projects` actually returns — the fields
  *  ATTENTION_ARRIVALS reads, and nothing invented. Mirrors the `row()` helper
@@ -100,28 +100,28 @@ function assertRowHref(row, expectAttn) {
 
 test("attentionGroups: each project row's count is selectProjects(rows, arrivalQuery(key)).length over PA-PF (criteria 1-4)", () => {
   const groups = attentionGroups(SUMMARY_COUNTS, PA_PF);
-  for (const filter of ATTENTION_ARRIVALS) {
-    const expected = selectProjects(PA_PF, arrivalQuery(filter.key)).length;
-    const row = projectRow(groups, filter.key);
+  for (const key of ATTENTION_ARRIVALS) {
+    const expected = selectProjects(PA_PF, arrivalQuery(key)).length;
+    const row = projectRow(groups, key);
     if (expected === 0) {
-      assert.equal(row, null, `${filter.key} expected zero-suppressed`);
+      assert.equal(row, null, `${key} expected zero-suppressed`);
     } else {
-      assert.equal(row.count, expected, `${filter.key} count must equal the filtered list length`);
+      assert.equal(row.count, expected, `${key} count must equal the filtered list length`);
     }
   }
   // The fixture's own known counts (design §5): 1 / 2 / 1 / 2.
   assert.equal(projectRow(groups, "submissions").count, 1);
   assert.equal(projectRow(groups, "inReview").count, 2);
-  assert.equal(projectRow(groups, "readyToIssue").count, 1);
+  assert.equal(projectRow(groups, "ready").count, 1);
   assert.equal(projectRow(groups, "awaitingPayment").count, 2);
 });
 
-test("attentionGroups: Projects lifecycle row order is submissions, inReview, readyToIssue, awaitingPayment (criterion 1)", () => {
+test("attentionGroups: Projects lifecycle row order is submissions, inReview, ready, awaitingPayment (criterion 1)", () => {
   const groups = attentionGroups(SUMMARY_COUNTS, PA_PF);
   const projects = groups.find((g) => g.id === "projects");
   assert.deepEqual(
     projects.rows.map((r) => r.key),
-    ["submissions", "inReview", "readyToIssue", "awaitingPayment"],
+    ["submissions", "inReview", "ready", "awaitingPayment"],
   );
 });
 
@@ -135,7 +135,7 @@ test("attentionGroups: PF matches no predicate, proving narrowing (criterion 5)"
   // are absent from submissions, PA/PD/PE absent from inReview, etc. Spot
   // check the two that hold every non-matching row.
   assert.equal(selectProjects(PA_PF, arrivalQuery("submissions")).length, 1);
-  assert.equal(selectProjects(PA_PF, arrivalQuery("readyToIssue")).length, 1);
+  assert.equal(selectProjects(PA_PF, arrivalQuery("ready")).length, 1);
 });
 
 test("attentionGroups: a state move flips counts and swaps list membership (criterion 6)", () => {
@@ -152,14 +152,14 @@ test("attentionGroups: a state move flips counts and swaps list membership (crit
   assert.deepEqual(inReviewRefs.sort(), ["PA", "PB", "PC"]);
 });
 
-test("attentionGroups: readyToIssue is exactly rows.filter(r => r.issuable) whatever else a row claims (criteria 7-8)", () => {
+test("attentionGroups: ready is exactly rows.filter(r => r.issuable) whatever else a row claims (criteria 7-8)", () => {
   const rows = [
     ...PA_PF,
     row({ ref: "PG", statusCustomer: "submitted", issuable: true, orderStage: "deposit_invoiced" }),
   ];
   const groups = attentionGroups(SUMMARY_COUNTS, rows);
-  const readyRefs = projectRow(groups, "readyToIssue")
-    ? selectProjects(rows, arrivalQuery("readyToIssue")).map((r) => r.ref)
+  const readyRefs = projectRow(groups, "ready")
+    ? selectProjects(rows, arrivalQuery("ready")).map((r) => r.ref)
     : [];
   assert.deepEqual(readyRefs.sort(), rows.filter((r) => r.issuable).map((r) => r.ref).sort());
 });

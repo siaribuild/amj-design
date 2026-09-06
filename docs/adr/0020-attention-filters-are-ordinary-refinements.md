@@ -32,10 +32,9 @@ question is the default chip, never a special case in one tick handler.
   not a copy), Awaiting payment, Unresolved lines, In production.
 - `QueueQuery.attention`, `ATTENTION_FILTERS` and `attentionQuery` are deleted.
   The only filter axis is `refinements`. `selectProjects` loses its fourth pass.
-- **Arrival stays a distinct act, not a distinct axis.** `?attn=<key>` keeps its
-  key strings (Attention's links are untouched) and maps to
-  `arrivalQuery(key)` = `{ chip: "all", refinements: [<the one refinement>],
-  search: "" }` — chip `all` so a card of N opens exactly N rows. Still
+- **Arrival stays a distinct act, not a distinct axis.** `?attn=<key>` names a
+  REFINEMENT and maps to `arrivalQuery(key)` = `{ chip: "all", refinements:
+  [key], search: "" }` — chip `all` so a card of N opens exactly N rows. Still
   one-shot: validated against the closed key set, stripped from the address,
   and ended by leaving the route (any navigation off `/ops2/projects` resets to
   `EMPTY_QUERY`). Attention's card counts use the same `arrivalQuery` through
@@ -44,6 +43,19 @@ question is the default chip, never a special case in one tick handler.
   — the one exit, whether the filters arrived by card or by hand.
 - The strip renders every active filter identically; the brand-toned prefilter
   pill goes with the axis.
+
+## Amendment, at review (fix round 2)
+
+This ADR first said `?attn=` "keeps its key strings (Attention's links are
+untouched)", which left one card spelled `readyToIssue` where its refinement is
+`ready`. Keeping it needed a `{ key, refinement }` mapping table whose other
+three entries mapped a key to itself, a second `AttentionKey` union beside
+`RefinementKey`, and a non-null assertion at the lookup. Both the ponytail and
+architecture reviews named that as the deleted axis growing back as a naming
+convention. So the card emits `?attn=ready`, `ATTENTION_ARRIVALS` is a list of
+`RefinementKey`, and `AttentionKey` is derived from it. ONE axis, one key space,
+one spelling — which is what this ADR decided; the retained key strings were the
+last thing contradicting it.
 
 ## Consequences
 

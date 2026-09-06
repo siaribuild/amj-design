@@ -71,7 +71,7 @@ const slideOut = (baseEl: HTMLElement) =>
 
 export function SidePanel({
   open, onClose, title, testId, footer, children,
-  phoneForm = "sheet", dismiss = "done",
+  phoneForm = "sheet", dismiss = "done", panelClass,
 }: {
   open: boolean;
   /**
@@ -115,6 +115,19 @@ export function SidePanel({
    * defect one surface over.
    */
   dismiss?: "done" | { back: string };
+  /**
+   * The caller's own name for its panel, carried onto the modal alongside the
+   * form classes so a stylesheet can reach THIS panel without reaching into
+   * this component.
+   *
+   * It exists because the filter's footer pinning was scoped with
+   * `:has(ion-list)` — identifying a caller by which elements it happens to
+   * put inside a shared component. That breaks two ways with nobody touching
+   * the filter: the next list-backed panel inherits a sticky footer it never
+   * asked for, and a markup change in here silently unpins this one. A class
+   * the caller declares is the seam; the children are not.
+   */
+  panelClass?: string;
   children: ReactNode;
 }) {
   const wide = useRailWidth();
@@ -199,7 +212,7 @@ export function SidePanel({
       expandToScroll={sheet ? false : undefined}
       enterAnimation={fromRight ? slideIn : undefined}
       leaveAnimation={fromRight ? slideOut : undefined}
-      className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}${form === "screen" ? " pq-sheet--screen" : ""}`}
+      className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}${form === "screen" ? " pq-sheet--screen" : ""}${panelClass ? ` ${panelClass}` : ""}`}
       data-testid={testId}
       // REMOUNT WHEN THE FORM CHANGES. Ionic settles `isSheetModal`, its gesture
       // and its breakpoint during `present()`, so a window crossing the change
