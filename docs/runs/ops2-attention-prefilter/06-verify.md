@@ -1,172 +1,197 @@
-# Verify — ops2 attention prefilter (round 2)
+# 06 — Verify (independent, adversarial)
 
-**Verdict: FAIL.** One high-severity defect. Both round-1 findings are genuinely
-fixed — the worker DTO carries the two approved fields (F1) and pressing an
-Attention row now opens exactly the set it counted (F2) — and I reproduced both
-fixes from scratch rather than reading the build notes. The fix for F2, however,
-moved the race rather than closing it: the one-shot flag it introduced is
-consumed by the wrong lifecycle event on a click arrival, so a prefilter applied
-by pressing a row **survives later navigation back into the queue**, which
-criterion 11 forbids. A red test for it is now in
-`scripts/tests/web/ops2-attention.spec.ts:177`.
+**Verdict: PASS**, with 3 findings — none blocking, all recommended for the run's
+debt file rather than a developer session. See "Findings" for the severity call
+on each.
 
-Verified against `c1ec0507` on `feat/ops2-attention-prefilter`. Nothing in
-`04-build.md` was taken on trust; every count, filter and refusal below was
-executed.
+Verified from scratch against `01-spec.md`. Nothing in `04-build.md`,
+`07-review-*.md` or the previous `06-verify.md` was taken as true; every claim
+below was re-run in this session and the actual output is recorded.
 
-## Gates
+Diff under test: `git diff 4a1acc69..8bc0e74e` (branch `feat/ops2-attention-prefilter`,
+merge-base `4a1acc69`).
 
-| Gate | Result |
-| --- | --- |
-| `npm run typecheck:gate` | PASS — `✓ no fatal type errors (62 non-fatal remain)` |
-| `npm run test:ops2` | PASS — 134 pass, 0 fail |
-| `node --test --test-concurrency=1 scripts/tests/api.test.mjs` | PASS — 31 pass, 0 fail; the D1/abuse subtest ran (`✔ GET /api/ops/projects row DTO carries statusCustomer/orderStage; role abuse on projects and summary (247ms)`) |
-| `npx playwright test scripts/tests/web/ops2-attention.spec.ts scripts/tests/web/ops2-projects.spec.ts` | PASS as shipped — 43 passed. With the tester's new red test added: 21 pass, **1 fail** (F4) |
-| `npx playwright test scripts/tests/web/ops2.spec.ts ops2-navigation.spec.ts ops2-record.spec.ts` | 45 passed, 1 failed — `ops2-navigation.spec.ts:308` , which passes twice in isolation and alone as a file. Parallel-worker flake, unrelated to this feature (note N1) |
-| Live abuse probes (`node scripts/tests-verify/abuse.mjs` against a real Worker) | PASS — 22/22 |
+---
 
-## Acceptance criteria
+## 1. Gates
+
+| Gate | Command | Result |
+|---|---|---|
+| Types | `npm run typecheck:gate` | `✓ no fatal type errors (62 non-fatal remain)` |
+| ops2 node suites | `npm run test:ops2` | `tests 135 / pass 135 / fail 0` |
+| Worker + D1 journeys (owns `worker/routes/ops.ts`) | `node --test --test-concurrency=1 scripts/tests/api.test.mjs` | `tests 31 / pass 31 / fail 0` |
+| Browser (UI-facing, mandatory) | `npx playwright test scripts/tests/web/ops2-attention.spec.ts scripts/tests/web/ops2-projects.spec.ts` | `46 passed (1.6m)` |
+| Tester's own probes | `npx playwright test -c playwright.verify.config.ts` | `6 passed (49.1s)` |
+| Tester's live end-to-end probe (no stubs) | `node scripts/tests-verify/live-attention-probe.mjs` | `LIVE PROBE PASS` |
+
+Playwright coverage exists and is load-bearing — see criterion 16 below, where
+the mechanism was disabled and the browser suite went red.
+
+---
+
+## 2. Acceptance criteria
+
+Evidence marked **LIVE** was produced against a real local Worker + D1
+(`scripts/tests/web-server.mjs`), not a route stub.
 
 | # | Criterion | Verdict | Evidence |
-| --- | --- | --- | --- |
-| 1 | new submissions row lists exactly N submitted | PASS | `ops2-attention.spec.ts:148` `the submissions row lands on /projects listing exactly its predicate's fixture refs` — 1 row, `PA` only, PB–PF absent. Green. |
-| 2 | being priced lists exactly N under_review | PASS | Same test, `inReview` — 2 rows, `PB`+`PC`, others absent. |
-| 3 | ready to issue lists exactly N issuable | PASS | Same test, `readyToIssue` — 1 row, `PC` (the only `issuable: true` fixture row). |
-| 4 | awaiting payment lists exactly N invoiced | PASS | Same test, `awaitingPayment` — 2 rows, `PD`+`PE`; `PF` (`orderStage: manufacturing`) absent. |
-| 5 | the filter narrowed, not merely rendered a default | PASS | Those four tests assert every out-of-set ref has count 0 over the 6-row PA–PF fixture; `PF` matches no predicate at all. Also proved by mutation M1 below. |
-| 6 | a state move shifts count and membership | PASS | `ops2-attention.spec.ts:203` `a fixture change between visits moves both the count and the list it opens` (1 → 2, PA gone, PG/PH listed). Node: `ops2-attention.test.mjs` state-move membership swap, green in the 134. |
-| 7 | a project the issue gate refuses is neither counted nor listed | PASS | `ATTENTION_FILTERS.readyToIssue` is `(r) => r.issuable` (`src/ops2/projects/queue.ts:171`) — the server's own `issuableNow` verdict, never `status_internal`. `parseProjectQueue` under-claims (`r.issuable === true`, `queue.ts:497`). Node suite pins `readyToIssue === rows.filter(issuable)`. |
-| 8 | a project the gate accepts is counted and listed | PASS | Criterion 3's test: `PC` is counted 1 and is the single listed row. |
-| 9 | the active control is nameable on screen | PASS | `ops2-projects.spec.ts:190` — `queue-active-filters` contains `Ready to issue` as `.pq-flag[data-tone="brand"]`. Reached by a real click in criteria 1–4's tests too. |
-| 10 | turning it off returns to `Needs us`, address clean | PASS | Same test — Clear applies `EMPTY_QUERY`: `Needs us` chip `aria-pressed=true`, both fixture rows back, URL bare (`history.replace` stripped `?attn=` on arrival). |
-| 11 | any other route opens on `Needs us`, no filter | **FAIL** | Green only on the `page.goto` arrival path (`ops2-projects.spec.ts:147`). After the click path it is broken: prefilter and its strip survive rail navigation away and back. **F4**. |
-| 12 | unknown filter value renders default, no error | PASS | `ops2-projects.spec.ts:215` — `?attn=bogus` plus three payloads: default 2 rows, no `queue-active-filters`, no `queue-error`, param stripped. `attentionFromSearch` is a closed key set (`queue.ts:188`). |
-| 13 | Enquiries and Trade rows unchanged | PASS | `ops2-attention.spec.ts:251` → `/enquiries`, `:302` → `/customers`, both green; their counts still come from `parseSummary`'s two-key body, and their hrefs carry no query string. |
-| 14 | a zero predicate draws no row | PASS | `ops2-attention.spec.ts:238` — a one-row fixture draws `submissions` only; the other three testids have count 0. |
-| 15 | a failed projects fetch draws failure, never zero | PASS | `ops2-attention.spec.ts:287` — summary 200 + queue 500 → `attention-error` with `role=alert`, zero `attention-row-*`. `combineLoads` precedence verified in the node suite. (A malformed **200** is a different, uncovered case — note F5.) |
-| 16 | the tests fail when the mechanism is disabled | PASS, mutation-proved | **M1**: `selectProjects`' attention filter replaced with `.filter(() => true)` → all four narrowing tests red. **M2**: the `justAppliedAttnRef` guard deleted → same four red. **M3**: `awaitingPayment` widened to `orderStage !== null` → node suite red (`actual: ['PD','PE','PF'] expected: ['PD','PE']`). The tests assert listed row refs, never chip state. |
-| 17 | the only worker change is the two approved DTO fields | PASS | `git diff 4a1acc69..HEAD -- worker/` is 5 added lines in `worker/routes/ops.ts:426–430`: a three-line D1 rationale comment plus exactly `statusCustomer: r.status_customer` and `orderStage: r.order_stage ?? null`. Nothing else under `worker/`. Read off the live endpoint: `{"id":"p_order","statusCustomer":"closed","orderStage":"manufacturing"}` and `{"id":"p_submitted","statusCustomer":"submitted","orderStage":null}`. |
-| 18 | signed-out plus filter renders no project data | PASS | `ops2-projects.spec.ts:245` — fresh context, `?attn=readyToIssue`: `queue-error` visible, `queue-row` count 0. Live probe: the anonymous document request leaks none of `p_submitted` / `OF-Q` / `Northcote` / `statusCustomer`. Qualification: the app shows the staff-role refusal rather than a sign-in screen, deliberately (`useProjectQueue.ts:64–75`) — the sign-in is Cloudflare Access on the host, which is off in local dev. |
-| 19 | customer session on `/api/ops/projects` → 401/403, no rows | PASS — executed for real | `api.test.mjs:271–277` green against a live Worker/D1, **and** re-executed with the feature's own parameters: `customer GET /api/ops/projects?attn=readyToIssue` → **403** `{"error":"forbidden"}`, no `projects`; same for `?attn=submissions&wait=us`, `?attn=' OR 1=1 --`, `?attn=<script>alert(1)</script>`, `?attn=` + 4000 chars. |
-| 20 | manufacturer partner session → 401/403, no rows | PASS — executed for real | `api.test.mjs:279–284`: partner (`partner-t1@partner.example`, a Worker booted with `MANUFACTURER_EMAIL_DOMAINS:partner.example`) → **403** on `/api/ops/projects` and `/api/ops/summary`, `assertNoCounts` clean. My own harness cannot mint that identity (`web-server.mjs` does not set the var), which is why this row rests on that suite — re-run and green this round. |
-| 21 | non-staff on the summary endpoint → 401/403, no counts | PASS — executed for real | Live probe: anonymous and customer `GET /api/ops/summary?attn=readyToIssue` → **403**, none of the six count keys present. Anonymous is also pinned at `api.test.mjs:74`. |
-| 22 | injected filter value renders default, nothing executed or echoed | PASS — executed for real | Client: `ops2-projects.spec.ts:215` (SQL fragment, script tag, 10 kB string) → default set, nothing echoed into the body. Server: the same payloads sent to `/api/ops/projects` **as staff** return byte-identical `projects` arrays to the unparameterised call, status 200, with no echo of `OR 1=1` or `<script>` anywhere in the response — the Worker never reads `attn`. |
+|---|---|---|---|
+| 1 | submissions row → exactly N rows, all `statusCustomer === 'submitted'` | PASS | **LIVE**: `live-attention-probe.mjs` — endpoint predicate `submissions: ['OF-Q-10003']`, gate row read `1 …`, press listed exactly `OF-Q-10003`, every other real ref absent. Also stubbed: `ops2-attention.spec.ts:148` case `submissions` (PA). |
+| 2 | being priced → exactly N, all `under_review` | PASS | **LIVE**: predicate `inReview: ['OF-Q-C7PROBE']`, count 1, list exactly `OF-Q-C7PROBE`. Stubbed: same spec, case `inReview` (PB, PC). |
+| 3 | ready to issue → exactly N, all `issuable` | PASS | **LIVE**: after seeding a genuinely issuable project, predicate `readyToIssue: ['OF-Q-10003']`, count 1, list exactly that ref. Stubbed: same spec, case `readyToIssue` (PC only, PB excluded). |
+| 4 | awaiting payment → exactly N, `deposit_invoiced`/`balance_invoiced` | PASS | **LIVE**: predicate `awaitingPayment: ['OF-Q-10002']`, count 1, list exactly that ref. Stubbed: same spec, case `awaitingPayment` (PD, PE; PF `manufacturing` excluded). |
+| 5 | the other three predicates' projects are absent (proves narrowing) | PASS | `ops2-attention.spec.ts:162-164` asserts `toHaveCount(0)` for every non-matching ref, per key. Node: `ops2-attention.test.mjs:128` (PF matches nothing). **LIVE** probe asserts the same exclusion over real refs. |
+| 6 | a state move drops one count and raises the other, no other reload | PASS | `ops2-attention.test.mjs:141` (membership swap). Browser: `ops2-attention.spec.ts:203` "a fixture change between visits moves both the count and the list it opens". |
+| 7 | the old summary SQL's verdict must not be used | PASS | **LIVE, decisive.** Inserted `p_probe_c7` — `status_internal='estimator_assigned'`, zero lines, so the summary's `NOT EXISTS` subselect is vacuously true. `GET /api/ops/summary` → `readyToIssue = 1`. Same DB, same moment, `GET /api/ops/projects` → `issuable count = 0`, and the Attention gate drew **no** ready-to-issue row. Backed by `ops2-attention.test.mjs:201` proving `parseSummary` no longer accepts the field at all. |
+| 8 | an `issuable` project is counted and listed | PASS | **LIVE**: `p_submitted` made issuable (delivery settled, lines ready) → gate drew the row, press listed exactly it. Node: `ops2-attention.test.mjs:155`. |
+| 9 | the control reads as active and is nameable | PASS | `queue-active-filters` renders `pq-flag` with the `ATTENTION_FILTERS` label; asserted in `ops2-projects.spec.ts:198` ("Ready to issue") and `:163` ("New submissions"), and by tester probe `PROBE C10`. `All` chip is lit alongside (`attentionQuery` sets `chip: "all"`). |
+| 10 | turning it off returns to `Needs us`, address carries no filter | PASS | Tester probe `PROBE C10: Clear leaves Needs us and a bare address` — after Clear, `new URL(page.url()).search === ""`, `Needs us` chip `aria-pressed=true`, all 6 rows back. |
+| 11 | any other route opens on `Needs us`, no filter | PASS | Four independent paths, all green: rail-away/rail-back (`ops2-projects.spec.ts:147`, `ops2-attention.spec.ts:177`), back-from-record (`ops2-projects.spec.ts:178`), **Back-then-Forward across the stripped entry** (tester probe `PROBE C11`, previously uncovered), and **full reload of the stripped address** (tester probe `PROBE C11: reloading…`). |
+| 12 | unknown filter value → default set, no error, no claimed filter | PASS | `ops2-projects.spec.ts:216` (bogus + 3 payloads). Tester probe `PROBE C12` extends it to a **repeated** parameter (`?attn=submissions&attn=readyToIssue` → first wins, 1 row) and a **case variant** (`?attn=Submissions` → default set, no strip, no error). |
+| 13 | Enquiries and Trade rows unchanged | PASS | `ops2-attention.spec.ts:251` (`/enquiries`) and `:302` (`/customers`); href shape asserted in `ops2-attention.test.mjs:209` — project rows carry `?attn=<key>`, these two carry no query at all. |
+| 14 | a zero predicate draws no row | PASS | `ops2-attention.spec.ts:238` (three keys suppressed). **LIVE**: with the real seed, `readyToIssue` and `awaitingPayment` matched nothing and the probe asserted `attention-row-*` count 0 for both. |
+| 15 | a failed `/api/ops/projects` draws failure, never zero, never pressable | PASS | `ops2-attention.spec.ts:287` "summary ok but the queue 500s draws attention-error, not a half-ready page", zero rows. `combineLoads` precedence covered by `ops2-attention.test.mjs:226`. A malformed-but-parseable body throws inside `useProjectQueue`'s `.then` and lands in `.catch` → error, not zero. |
+| 16 | **disabling the mechanism must turn the tests red** | PASS | Mutation-tested, twice. **M1** — `selectProjects` ignores `query.attention` (`queue.ts:650`): `node --test scripts/tests/ops2-projects.test.mjs scripts/tests/ops2-attention.test.mjs` fails with `actual: ['PA','PB','PC','PD','PE','PF'], expected: ['PA']`. **M2** — `ProjectsPage` applies `EMPTY_QUERY` instead of `attentionQuery(key)` (the queue ignores the filter the row sets): browser suite **8 failed / 22 passed**, and the four failures named are exactly `the {submissions,inReview,readyToIssue,awaitingPayment} row lands on /projects listing exactly its predicate's fixture refs`, all on `expect(rows).toHaveCount(expected.length)`. Both mutations reverted; `git status src/` clean. |
+| 17 | only the two approved `worker/` fields | PASS | `git diff 4a1acc69..HEAD -- worker/ migrations/` → `worker/routes/ops.ts \| 5 +++++`, one file, and the five lines are `statusCustomer: r.status_customer`, `orderStage: r.order_stage ?? null` plus a three-line D1 citation comment. No other `worker/` file, no migration. |
+| 18 | signed-out browser: sent to sign-in, no project data | **PARTIAL** | Data half **PASS, executed live**: `GET /api/ops/projects` → `403 {"error":"forbidden"}` with and without `?attn=`; the browser renders `queue-error`, **0** `queue-row`, and no `OF-Q-*` ref anywhere in the document. Sign-in half **FAIL** — see finding **V1**. |
+| 19 | signed-in Customer → 401/403, no rows | PASS, executed live | Real session: `POST /api/auth/verify` → 200, `GET /api/auth/me` → `{"authenticated":true,"user":{"id":"u_demo",…}}`. Then `GET /api/ops/projects` → `403 {"error":"forbidden"}`; with `?attn=readyToIssue&wait=us` → `403`; `GET /api/ops/summary` → `403`. Regression-locked by `api.test.mjs:270`. |
+| 20 | Manufacturer partner → 401/403, no rows | PASS, executed live | Inserted `u_mfg_probe` (`type='internal'`, `role='manufacturer'`), signed in through `POST /api/ops/auth/verify` → 200, `GET /api/auth/me` confirms the session is real. `GET /api/ops/projects` → `403`; `?attn=submissions` → `403`; `GET /api/ops/summary` → `403`. Guard is `resolveStaff` (`worker/lib/staff.ts:155`), which refuses `role === "manufacturer"`. |
+| 21 | any non-Staff → summary refused, no counts | PASS, executed live | Anonymous `403`, customer `403`, manufacturer `403` — all `{"error":"forbidden"}`, no count keys in any body. |
+| 22 | injected filter value → default set, executes nothing, echoes nothing | PASS, executed live | Shipped test asserts no echo. Tester probe `PROBE C22` additionally asserts the payload never **ran**: for `<script>window.__pwned=1</script>`, `"><img src=x onerror=window.__pwned=1>`, `javascript:window.__pwned=1` and `'; DROP TABLE project; --`, `window.__pwned` is `undefined`, the default 6-row set renders, no strip, no error. The value never reaches the server — `attentionFromSearch` (`queue.ts:188`) validates against the closed key set before anything consumes it. |
 
-## Findings
+---
 
-### F4 — HIGH — a prefilter applied by PRESSING an Attention row survives later navigation back into the queue (criterion 11)
+## 3. Findings
 
-`src/ops2/projects/ProjectsPage.tsx:91–116`. The F2 fix added `justAppliedAttnRef`,
-set when the `?attn=` effect consumes the param and cleared by the *next*
-`ionViewWillEnter`. That assumes the arrival's own lifecycle event always fires
-after the effect and before the reader leaves. It does not: on a fast hop the
-arrival's `ionViewWillEnter` never arrives, so the flag is still set when the
-reader comes back, the reset hook consumes it as though this were the arrival,
-and the prefilter is left in place for good. The queue then opens narrowed on a
-plain rail navigation — the exact "the default is untouched; only an Attention
-row's link sets a filter" promise of P5/criterion 11.
+### V1 — LOW/MEDIUM — a signed-out visitor is told it is "Signed in" and to ask an admin for a role
+**Criterion:** 18 ("**it is sent to sign-in** and no project data is rendered") — the
+second half holds, the first does not.
 
-Instrumented proof (temporary `console.log`s in both callbacks, reverted; the
-sequence is the whole flow, arrival then rail-away then rail-back):
+**File:** `src/ops2/projects/useProjectQueue.ts:68-74` (copy), `src/ops2/nav/AccountButton.tsx:43`
+(the identity chip).
 
-    [PROBE] effect consumed attn, flag=true
-    [PROBE] willEnter fired, flag=true search=
-    strip: 1 rows: 1          <- after rail away and back; expected strip 0, rows 6
+**Reproduce:**
+```
+WEB_PORT=8799 node scripts/tests/web-server.mjs      # in another pane
+node scripts/tests-verify/signed-out-probe.mjs
+```
+**Actual output:**
+```
+final URL      : http://ops.localhost:8799/ops2/projects
+ops API calls  : [ '200 /api/ops/brand', '401 /api/ops/me', '403 /api/ops/projects' ]
+queue-error    : 1
+queue rows     : 0
+error text     : This account cannot see the queue. Projects are staff-only. Ask an administrator to add the role. Try again
+sign-in words? : false
+any project ref on page?: false
+```
+`scripts/tests-verify/so2.mjs` shows the same on `/ops2` and `/ops2/attention`, and
+the shell's account chip reads **"Signed in"** to a browser holding no session.
 
-Only **one** `willEnter` fires across two entries. With deliberate waits inserted
-between the hops, two fire and the reset works — which is why the shipped suite
-misses it: `ops2-projects.spec.ts:147` arrives by `page.goto` (full document
-load) and the shipped narrowing tests never navigate away afterwards.
+**Assessment.** The security property is intact — nothing leaks, and the API
+refuses at `resolveStaff`. What fails is the criterion's stated destination: a
+signed-out staff member is told to ask an administrator for a role they already
+hold, while the chrome claims they are signed in. Both behaviours are
+**pre-existing** (`AccountButton` from `38b77dda`, deliberate for the
+behind-Cloudflare-Access case where the person genuinely is signed in) and
+neither is touched by this diff. Recommend DEBT plus an owner decision on
+whether ops2 gets a sign-in route at all, rather than a developer session inside
+this run.
 
-Not a one-off: reproduced on the single-hop path, the multi-hop path
-(Attention → Products → Attention → row), and after a browser Back
-(`readyToIssue` still on, 1 row, strip lit).
+### V2 — LOW — spec §3's seed instruction was not carried out; every shipped browser assertion for criteria 1–4 is stubbed
+**Criterion:** §3 Edge cases — *"the local seed is thin (1 submission, 0 ready to
+issue). Rows must be added."*
 
-Reproduce — the red test is committed to the shipped suite:
+**File:** `scripts/db/seed.sql` (unchanged across the whole feature —
+`git diff 4a1acc69..HEAD --stat` lists no seed file).
 
-    npx playwright test scripts/tests/web/ops2-attention.spec.ts --reporter=line
+**Reproduce:**
+```
+git diff 4a1acc69..HEAD --stat -- scripts/db/
+grep -c "page.route" scripts/tests/web/ops2-attention.spec.ts
+```
+Real endpoint on the untouched seed:
+```
+ submissions 1 | inReview 0 | readyToIssue 0 | awaitingPayment 0
+```
+— only one predicate non-empty, so the shipped suite could not have used it and
+used a PA-PF route stub instead.
 
-Actual:
+**Assessment.** The *purpose* of the seed precondition (non-empty, pairwise
+non-identical sets) is met by the PA-PF fixture, and the real-endpoint link is
+held by `api.test.mjs:246`. I closed the remaining gap myself —
+`scripts/tests-verify/live-attention-probe.mjs` drives all four criteria against
+the real endpoint with no stubs and passes — but that probe is not in any
+`test:*` script, so nothing durable stops the real endpoint and the four
+predicates drifting apart. Fix is four rows in `scripts/db/seed.sql` plus one
+unstubbed browser assertion. LOW: a coverage-durability gap, not a defect.
 
-    1 failed
-      ops2-attention.spec.ts:177 › a prefilter applied by pressing a row is reset by later rail navigation
-    21 passed
+### V3 — LOW — the payload guard covers a lost field but not a lost envelope
+**Standard:** the developer's own rule in `8bc0e74e` / `attention.ts:124-143` —
+*"a payload that lost the field is a failure to tell, not a clear day"*.
 
-    Error: expect(locator).toHaveCount(expected)
-      waiting for getByTestId('queue-active-filters')
-      14 × locator resolved to 1 element
-         - unexpected value "1"
-      at scripts/tests/web/ops2-attention.spec.ts:189
+**File:** `src/ops2/attention/attention.ts:138` (`rows.length > 0 && …` short-circuits),
+`src/ops2/projects/queue.ts:476` (`if (!Array.isArray(projects)) return []`).
 
-Three more failing cases are in the tester's scaffolding
-(`scripts/tests-verify/web/attn-probe.spec.ts`, run with
-`npx playwright test --config=playwright.verify.config.ts`): P1 (single hop),
-P2 (multi hop), P4 (browser Back). P3, P5 and P6 pass — a second row's press
-does replace the first prefilter, a reload returns the default set, and the
-prefilter holds over the on-enter re-fetch.
+**Failing test attached:** `scripts/tests-verify/web/shape-probe.spec.ts`
+```
+npx playwright test -c playwright.verify.config.ts scripts/tests-verify/web/shape-probe.spec.ts
+```
+**Actual output:**
+```
+Error: Timed out 10000ms waiting for expect(locator).toBeVisible()
+Expected: visible
+Received: <element(s) not found>
+> 51 |   await expect(page.getByTestId("attention-error")).toBeVisible();
+1 failed
+```
+A `200` whose body renames `projects` (the shape an endpoint contract break
+produces) parses to zero rows, the `rows.length > 0` guard never fires, and the
+gate draws a clear day — the exact silence the guard was added to prevent, one
+level up. Note the guard is correctly scoped where it is: `orderStage` all-null
+and `issuable` all-false are legitimate states and must **not** be refused;
+`statusCustomer` and the envelope shape are the only two that cannot legitimately
+be absent.
 
-The fix belongs in `src/ops2/projects/ProjectsPage.tsx`. The two behaviours are
-one decision — "what query should this entry show?" — and splitting it across an
-effect and a lifecycle callback that fire in an order neither controls is what
-has now failed twice. A flag consumed by whichever event happens to run next is
-still that split. Whatever replaces it, the criterion-11 test above and the four
-narrowing tests must all be green untouched.
+**Assessment.** Not reachable against today's Worker; requires a contract break.
+LOW → debt.
 
-### F5 — LOW (debt) — a malformed 200 from the queue is drawn as a quiet day, not as failure
+---
 
-`src/ops2/projects/queue.ts:475` (`parseProjectQueue`) returns `[]` for a body
-whose `projects` is not an array, so `combineLoads` reports `ready` with zero
-rows, all four project rows are zero-suppressed (criterion 14) and the gate
-renders Enquiries/Customers alone — no error, nothing saying the queue could not
-be read. `parseSummary` treats exactly this shape as `degraded` and says so in
-its own comment ("an under-claiming parse here is exactly the reassuring lie the
-legacy dashboard told"); the two halves of the same page disagree.
+## 4. What was deliberately probed and found sound
 
-Outside criterion 15 as literally written (that names a failed or error
-response, and this is a 200), and it needs a Worker bug to reach — hence LOW and
-the debt file rather than a developer session. Raise it to a fix if the owner
-wants the queue's parse to match the summary's stance.
+- **One selector.** Counts are `selectProjects(rows, attentionQuery(key)).length`
+  (`attention.ts:100`) and the list is `selectProjects(rows, query)`
+  (`ProjectsPage.tsx:155`) — the same function, and M1 proves a change to it
+  moves both together.
+- **`chip: "all"` in `attentionQuery`.** Verified this is load-bearing:
+  `awaitingPayment` rows are `waitingOn: Customer`, so the default `us` chip
+  would have emptied that set.
+- **Two effects, not one** (`ProjectsPage.tsx:106` and `:139`). The debt file
+  explicitly refuses ponytail's merge suggestion. I probed the race it guards —
+  Back/Forward, reload, rail round-trip, back-from-record, and two different rows
+  pressed in one session — all green (`PROBE C11` ×2, `PROBE C1-4`).
+- **P6, is the flag a real control?** It is a static `pq-flag` chip, not a
+  toggle; `Clear` is the off-switch. Visible, named with the filter's own label,
+  and reversible in one press — reads as meeting P6. ADR 0018 records why the
+  funnel refinements were rejected for it. No finding.
+- **`?? null` on `orderStage`** (DECISIONS D1's load-bearing detail). Confirmed on
+  the real endpoint: an order-less project serialises `"orderStage": null`, key
+  present. Regression-locked by `Object.hasOwn` in `api.test.mjs:264`.
 
-Reproduce:
+## 5. Housekeeping
 
-    npx playwright test --config=playwright.verify.config.ts --grep "P7"
+Both mutations were reverted; `git status` shows no modification under `src/`,
+`worker/` or `scripts/tests/`. The tester's artefacts are untracked and live
+outside the shipped suites:
 
-Actual: `attention-enquiries` visible, `attention-error` never appears
-(`Timed out 10000ms waiting for expect(locator).toBeVisible()`).
-
-### F6 — LOW (debt) — empty-state copy still diverges from the approved mock
-
-Unchanged from round 1's F3. `src/ops2/projects/queue.ts:379–380` ships
-`Nothing here is “<label>” any more.` / `This set moved on after Attention
-counted it.`; the mock and `03-ux.md` §5 say `… now.` / `These projects moved on
-after Attention counted them.` Same meaning; changing it also means editing the
-pinned assertion at `scripts/tests/ops2-projects.test.mjs:467`.
-
-### N1 — note, not a finding — `ops2-navigation.spec.ts:308` flakes under parallel workers
-
-`the two navigation surfaces agree about the back button` failed once in a
-three-file parallel run and passed both times in isolation and as a whole file
-alone. It touches nothing this feature changed. Pre-existing harness flake;
-recorded so the next round does not read it as a regression.
-
-## Tester scaffolding left in the tree (untracked, delete after the fix)
-
-- `scripts/tests-verify/web/attn-probe.spec.ts` — P1–P7 above.
-- `scripts/tests-verify/abuse.mjs` — criteria 19/21/22 against a live Worker
-  (`node scripts/tests/web-server.mjs` first).
-- `scripts/tests-verify/live-rows.mjs` — the four predicates over the real seed
-  through the real endpoint.
-- `playwright.verify.config.ts` — points Playwright at that directory.
-
-The one change to a shipped file is the red test at
-`scripts/tests/web/ops2-attention.spec.ts:177`. No implementation code was
-touched by the tester; the three mutations (M1–M3) were reverted and
-`git diff -- src/ worker/` is clean apart from the feature's own commits.
-
-## Re-verification, when F4 lands
-
-    npx playwright test scripts/tests/web/ops2-attention.spec.ts     # 22 pass, F4's test green
-    npx playwright test --config=playwright.verify.config.ts         # P1, P2, P4 green (P7 = F5, deferred)
-    npx playwright test scripts/tests/web/ops2-projects.spec.ts      # no regression, 22 pass
-    npm run test:ops2 && npm run typecheck:gate                      # no regression
-    node --test --test-concurrency=1 scripts/tests/api.test.mjs      # 31 pass, DTO + abuse block
+```
+playwright.verify.config.ts
+scripts/tests-verify/web/attn-probe.spec.ts        6 probes, all green
+scripts/tests-verify/web/shape-probe.spec.ts       V3's failing test
+scripts/tests-verify/live-attention-probe.mjs      criteria 1-4/7/14 with no stubs
+scripts/tests-verify/signed-out-probe.mjs          V1's evidence
+scripts/tests-verify/so2.mjs                       V1's evidence
+```
+Delete them, or promote `live-attention-probe.mjs` into `scripts/tests/web/`
+alongside the seed rows if V2 is taken up.

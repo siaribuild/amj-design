@@ -1,149 +1,203 @@
-# Acceptance — ops2 attention prefilter
+# Acceptance — ops2 attention prefilter (round 3)
 
-**Verdict: REJECT.**
+**Verdict: ACCEPTED** — with one criterion met only in part (18), two durability
+items routed to debt, and four `ASSUMED:` tags still awaiting the owner's yes or
+veto. My acceptance is a recommendation; the owner gives final sign-off.
 
-The one thing this run exists to do — press an Attention row, land on exactly that
-set — does not work. Criteria 1–5 fail, criterion 8 fails on its "listed" half, and
-criterion 17 (the worker change the owner explicitly approved in `DECISIONS.md` D1)
-was never built at all. Everything else in the spec is built and independently
-verified green, including all five abuse cases, three of them executed against a
-live worker.
+Round 2 rejected for one reason only: the last tester verdict on the branch was
+FAIL on criterion 11, and the fix that followed (`a6ffc24d`) had never been
+verified. That condition is now discharged. `06-verify.md` is an independent
+round-3 report against HEAD `8bc0e74e`, re-run from scratch — nothing taken from
+the build notes or the earlier verify — and criterion 11 is green on four
+separate arrival paths, two of which (Back-then-Forward across the stripped
+entry, and a full reload of the stripped address) were not covered before.
 
-Judged from the tester's evidence (`06-verify.md`) and the four review reports
-(`07-review-conformance.md`, `07-review-security.md`, `07-review-ponytail.md`,
-`07-review-codex.md`, `07-review-architecture.md`). No tests re-run here, no source
-read.
+Judged from `01-spec.md`, `06-verify.md`, `DECISIONS.md`, `DEBT.md` and the five
+review reports. No tests re-run here, no source read.
 
-All four reviewers independently reached the same two defects. That agreement is
-itself the evidence: this is not a flaky test.
+## What the owner asked for, and whether he got it
+
+He said: *"if there, for example, '1 ready to be issued' then clicking it must
+prefilter exactly that."* He does. Pressing "ready to issue" opens the queue
+listing exactly the projects that were counted, and the count is the issue gate's
+own verdict rather than a weaker SQL question that could promise work the issuing
+screen would refuse. This was demonstrated twice over: against route fixtures in
+the shipped browser suite, and against a real local Worker and D1 with no stubs
+(`live-attention-probe.mjs`).
+
+The decisive piece of evidence for the *reason this run exists* is criterion 16.
+The tester disabled the mechanism in two different places and the tests went red
+both times — the queue ignoring the filter turned the browser suite to 8 failed /
+22 passed, and the four failures named were exactly the four "lands on /projects
+listing exactly its predicate's refs" tests. Last run's tests were hollow; these
+are not.
 
 ## Criterion-by-criterion
 
-| # | Criterion | Verdict | Evidence |
+Evidence is at HEAD `8bc0e74e` unless stated. **LIVE** = executed against a real
+Worker + D1, no stubs.
+
+| # | Criterion | Verdict | Evidence (`06-verify.md`) |
 | --- | --- | --- | --- |
-| 1 | new submissions → exactly N submitted | **NOT MET** | `ops2-attention.spec.ts:148` — `queue-row` resolved to 6, expected 1 (`06-verify.md` F2). Also dead at the data layer: F1. |
-| 2 | being priced → exactly N under_review | **NOT MET** | Same test, `inReview` — 6 rows, expected 2. Also F1. |
-| 3 | ready to issue → exactly N issuable | **NOT MET** | Same test, `readyToIssue` — 6 rows, expected 1. |
-| 4 | awaiting payment → exactly N invoiced | **NOT MET** | Same test, `awaitingPayment` — 6 rows, expected 2. Also F1. |
-| 5 | the filter narrowed, not merely rendered a default | **NOT MET** | Same four tests: the full PA–PF set renders. This is the original complaint, unchanged. |
-| 6 | a state move shifts count and membership on reload | MET | `ops2-attention.spec.ts:178` green (3-hop path); node membership swap green within `test:ops2` 134 pass. |
-| 7 | the gate's refusal is neither counted nor listed | MET | Count path reads `issuable`, never `status_internal`; `ops2-attention.test.mjs` asserts count equals the `issuable` filter over the PA–PF fixture, green. |
-| 8 | the gate's acceptance is counted **and listed** | **PARTIAL — NOT MET** | Counted yes (as 7); listed fails with criterion 3 (F2). |
-| 9 | the active control is nameable on screen | MET, reachable only by URL | `ops2-projects.spec.ts:185` green. Today a reader can only reach that state by typing the address, because the click path never applies the filter. Becomes fully real when F2 lands. |
-| 10 | turning it off returns to `Needs us`, address clean | MET | Same test — Clear applies `EMPTY_QUERY`; param already stripped. |
-| 11 | any other route opens on `Needs us`, no filter | MET | `ops2-projects.spec.ts:147` green, plus `:128` (sibling route's `?attn=` ignored). |
-| 12 | unknown filter value → default, no error | MET | `ops2-projects.spec.ts:215` green; `attentionFromSearch` is a closed key set. |
-| 13 | Enquiries and Trade rows unchanged | MET | `ops2-attention.spec.ts:226` (`/enquiries`) and `:277` (`/customers`) green; both still read summary counts. |
-| 14 | a zero predicate draws no row | MET as specified — and it is what hides F1 | `ops2-attention.spec.ts:213` green. Correct behaviour, but combined with F1 it means the real console silently draws **no** submissions, being-priced or awaiting-payment row rather than showing anything wrong. |
-| 15 | a failed projects fetch draws failure, never zero | MET | `ops2-attention.spec.ts:262` green; `combineLoads` precedence unauthorised > error > loading > ready. |
-| 16 | the tests fail when the mechanism is disabled | MET, and proven the hard way | The mechanism is effectively disabled and all four tests went red. They assert listed row refs, never chip state — a lit chip cannot pass them. This is the one criterion the run added because the last run's tests were hollow; it worked. |
-| 17 | the only worker change is the two D1-approved fields | **NOT MET** | `git diff a76b8119..HEAD -- worker/` is **empty**; `worker/routes/ops.ts:421–447` emits neither field. Confirmed independently by conformance review Finding 1 and Codex P1. |
-| 18 | signed-out + filter renders no project data | MET | `ops2-projects.spec.ts:245` — `queue-error` visible, `queue-row` count 0. |
-| 19 | customer session on `/api/ops/projects` → 403, no rows | MET — executed for real | Live worker: **403**, `body.projects === undefined`. |
-| 20 | manufacturer partner session → 403, no rows | MET — executed for real | Live worker, `partner-t1@partner.example`: **403**, no `projects`. |
-| 21 | non-staff on the summary endpoint → 403, no counts | MET — executed for real | Customer and partner both **403**, `assertNoCounts` clean; anonymous already pinned `api.test.mjs:74`. |
-| 22 | injected filter value → default, nothing executed or echoed | MET | `ops2-projects.spec.ts:215` loops SQL fragment, script payload, 10kB string. Nothing reaches the server — the filter runs client-side over already-fetched rows. |
+| 1 | new submissions → exactly N, all `submitted` | MET | Row 1 — LIVE probe: count 1, list exactly `OF-Q-10003`, every other real ref absent; plus `ops2-attention.spec.ts:148` |
+| 2 | being priced → exactly N, all `under_review` | MET | Row 2 — LIVE: `OF-Q-C7PROBE`, count 1, list exactly that |
+| 3 | ready to issue → exactly N, all `issuable` | MET | Row 3 — LIVE after seeding a genuinely issuable project: count 1, list exactly that ref. The owner's own sentence, working |
+| 4 | awaiting payment → exactly N invoiced | MET | Row 4 — LIVE: `OF-Q-10002`, count 1; fixture `PF` (`manufacturing`) excluded |
+| 5 | the other three predicates' projects absent | MET | Row 5 — `spec.ts:162-164` `toHaveCount(0)` per key; LIVE probe asserts the same over real refs |
+| 6 | a state move shifts count **and** membership | MET | Row 6 — `ops2-attention.test.mjs:141`; browser `spec.ts:203` "a fixture change between visits moves both the count and the list it opens" |
+| 7 | the gate's verdict, not the old summary SQL | MET — decisive | Row 7 — LIVE: same DB, same moment, `/api/ops/summary` said `readyToIssue = 1` while the gate drew **no** row and `/api/ops/projects` gave `issuable count = 0`. `parseSummary` no longer accepts the field at all (`test.mjs:201`) |
+| 8 | an `issuable` project is counted **and listed** | MET | Row 8 — LIVE: made `p_submitted` genuinely issuable; row drawn, press listed exactly it |
+| 9 | the active control is nameable on screen | MET | Row 9 — `pq-flag` carries the filter's own label; `ops2-projects.spec.ts:198` "Ready to issue", `:163` "New submissions", tester probe C10 |
+| 10 | turning it off → `Needs us`, bare address | MET | Row 10 — probe C10: after Clear, `search === ""`, `Needs us` `aria-pressed=true`, all 6 rows back |
+| 11 | any other route opens clean (the round-2 blocker) | **MET — the fix is now verified** | Row 11 — four independent paths green: rail away/back, back-from-record, Back-then-Forward across the stripped entry, and full reload of the stripped address |
+| 12 | unknown filter value → default, no error | MET | Row 12 — `ops2-projects.spec.ts:216` plus probe C12: repeated parameter (first wins) and case variant (`?attn=Submissions` → default set, no error) |
+| 13 | Enquiries and Trade rows unchanged | MET | Row 13 — `spec.ts:251` `/enquiries`, `:302` `/customers`; project rows carry `?attn=`, these two carry no query at all |
+| 14 | a zero predicate draws no row | MET | Row 14 — `spec.ts:238`; LIVE: on the real seed, two predicates matched nothing and drew nothing |
+| 15 | a failed projects fetch draws failure, never zero | MET as written | Row 15 — `spec.ts:287` queue 500 → `attention-error`, zero rows. A malformed **200** is the residual — finding V3, debt |
+| 16 | the tests must go red when the mechanism is disabled | MET — mutation-proved twice | Row 16 — M1 (selector ignores the filter) reds the node suites; M2 (page applies `EMPTY_QUERY`) reds 8 browser tests, the four named being exactly criteria 1–4. Both reverted, tree clean |
+| 17 | only the two D1-approved `worker/` fields | MET | Row 17 — `worker/routes/ops.ts` only, 5 lines: the two fields plus a rationale comment. Independently confirmed by conformance review and by security review |
+| 18 | signed-out browser → **sent to sign-in**, no project data | **PART MET** | Row 18 + finding V1. Data half PASS, executed live: `403`, `queue-error`, **0** rows, no `OF-Q-*` anywhere in the document. Destination half FAIL: the signed-out visitor is told to "ask an administrator to add the role" and the chrome chip reads "Signed in". Both behaviours pre-date this branch and are untouched by it |
+| 19 | Customer session → 403, no rows | MET — executed live | Row 19 — real session (`/api/auth/me` confirms), then `403 {"error":"forbidden"}` on `/projects`, on `?attn=…`, and on `/summary`. Regression-locked `api.test.mjs:270` |
+| 20 | Manufacturer partner → 403, no rows | MET — executed live | Row 20 — a real manufacturer identity inserted and signed in; `403` on both endpoints; refused at `resolveStaff` |
+| 21 | any non-Staff on the summary → 403, no counts | MET — executed live | Row 21 — anonymous, customer, manufacturer all `403`, no count keys in any body |
+| 22 | injected filter value → default, nothing runs or echoes | MET — executed live | Row 22 — probe C22 proves the payload never *ran* (`window.__pwned` undefined) for four payloads incl. `'; DROP TABLE project; --`; the value never reaches the server |
 
-**Tally: 15 met, 6 not met (1, 2, 3, 4, 5, 17), 1 partial (8).**
+**Tally: 21 met, 1 part-met (18), 0 unmet.**
 
-Security acceptance is complete and genuinely executed — 18–22 all pass, three of
-them against a real worker and D1, and the security review found no HIGH or MEDIUM.
-That part of the spec is done.
+Security acceptance is complete and genuinely executed rather than asserted:
+18–22 were run against a live Worker and D1 with real sessions for three
+different identities, and the security review traced the untrusted `?attn=`
+value to a closed key set with no injection sink, no reflection, no SQL contact.
+No HIGH or MEDIUM findings.
+
+### On criterion 18
+
+I wrote "sent to sign-in". The product does not have a sign-in destination in
+ops2 — sign-in is Cloudflare Access at the host, so locally a session-less
+browser lands on a staff-refusal message. The protective half of the criterion —
+**no project data reaches a browser without a staff session** — is met and was
+executed for real. What fails is a wording and destination problem that this
+branch neither introduced nor touched: a staff member whose session lapsed is
+told to ask an admin for a role they already hold.
+
+I am not holding acceptance on it, because the remedy is a product decision
+(does ops2 get a sign-in route at all?) rather than a defect in this feature, and
+sending it round the developer loop with no decided answer would spend a session
+guessing. It becomes decision Q1 below.
 
 ## Silent descoping
 
-One, and it is the serious kind.
+**One item, and it is a coverage instruction rather than behaviour** (finding V2).
+Spec §3 said the thin local seed must gain rows so the four predicates are
+non-empty and non-identical. `scripts/db/seed.sql` was never touched, so every
+*shipped* browser assertion for criteria 1–4 runs against a route stub. The
+tester closed the gap himself with an unstubbed live probe and it passes — which
+is why criteria 1–4 read MET on live evidence — but that probe is in no `test:*`
+script, so nothing durable stops the real endpoint and the four predicates
+drifting apart later. Behaviour is proven today; the guard against tomorrow is
+missing. Decision Q2.
 
-**Criterion 17 / task t1 was reported as done and was not done.** `04-build.md:18`
-states "t1's worker DTO change was already committed/merged before this task
-started". There is no such commit anywhere in the feature range. The failing test
-that proves it (`scripts/tests/api.test.mjs:246`) exists but sits **uncommitted** —
-a red test with no green, which the next session cannot attribute to anything.
-
-Business consequence, stated plainly: the owner was asked a question at a decision
-gate, considered it, wrote a detailed YES with grounds, and the two lines he
-approved were never typed. Three of the four Attention rows would then have shown
-nothing at all in the real console — not a wrong number, no row — while every test
-suite stayed green because each one hands the page fields the live API never sends.
-The pipeline's own guard against this (criterion 17, checked with `git diff --
-worker/`) is what caught it.
-
-Nothing else was descoped: 03-ux's copy, the Enquiries/Trade rows, the default
-filter, and `issuableNow` are all as specced.
+Nothing else was dropped. Round 1's real descope — the two worker DTO fields —
+stays closed and is confirmed by three independent readers.
 
 ## Scope creep
 
-None of consequence.
+Small, and none of it a new ops control — worth saying plainly given this repo's
+history of ops accumulating unrequested features:
 
-- The worker diff is empty, so the "no worker change beyond two fields" bound
-  cannot have been exceeded — it was under-met, not over-run.
-- Conformance confirms nothing was built that the design did not name, and the
-  untouched-on-purpose list (`FilterSheet.tsx`, `rows.tsx`, `useProjectQueue.ts`,
-  `useSummary.ts`, `worker/lib/*`, `/api/ops/summary`, `seed.sql`) is absent from
-  the diff. Given this repo's history of ops accumulating unrequested controls,
-  worth saying out loud: it did not happen here.
-- Minor hygiene: two working-tree files (`ProjectsPage.tsx`, `projects.css`) are
-  uncommitted and unattributed (conformance Finding 2). They must be committed as
-  polish before sign-off, not left mixed with the orphan red test.
+- `scripts/tests-verify/abuse.mjs` and `live-rows.mjs` (167 lines) are committed
+  permanently. No npm script runs them; only `06-verify.md` mentions them; the
+  abuse cases are already asserted in the shipped suites. Ponytail says delete;
+  I agree.
+- Round 3 added more untracked residue of the same kind
+  (`playwright.verify.config.ts`, `scripts/tests-verify/web/*.spec.ts`,
+  `live-attention-probe.mjs`, two signed-out probes). Decide once for all of it —
+  see Q2, since one of them is worth promoting rather than deleting.
+- `src/ops2/styles/projects.css` (+19 lines) is polish-stage strip styling the
+  design did not name. Conformance accepts it; so do I.
 
-## Findings that are not spec criteria
+## Open findings that are not spec criteria
 
-Carried forward for the developer loop, in priority order:
+Ordered as I would take them. None blocks the criteria.
 
-1. **F1** (verify) / conformance Finding 1 / Codex P1 / architecture P0 — worker
-   DTO two-liner. Fix is exactly the two D1 lines and nothing else; `?? null` on
-   `orderStage` is load-bearing.
-2. **F2** (verify) / Codex P1 / architecture P0 — the `?attn=` effect races
-   `useIonViewWillEnter`. The four browser tests are correct as written and must go
-   green untouched.
-3. **Architecture P1** — `emptyStateFor` claims "this set moved on" whenever an
-   attention filter exists, even when the emptiness came from the reader's own
-   search or chip. That tells staff a falsehood about their data. Not covered by
-   any criterion of this spec; it is a real defect, and I would fix it in this loop
-   rather than ticket it.
-4. **Architecture P2** — "Search all" builds a `QueueQuery` without `attention`;
-   full `tsc` reports TS2741, hidden by the fatal-only gate. One line.
-5. **F3 / LOW (debt)** — empty-state copy differs from the approved mock
-   (`"any more."` vs `"now."`, `"This set"` vs `"These projects"`). Same meaning.
-   See the decision below.
-6. **Ponytail — advisory, −31 lines available.** Duplicate `PROJECT_NOUNS` vs
-   `ATTENTION_FILTERS[].label` across two files is the only one with a real future
-   cost (a fifth key means editing two files or shipping a label with no noun);
-   the rest is taste. My recommendation: take the `PROJECT_NOUNS` merge while
-   fixing F1/F2, leave the others.
+1. **Empty-state copy tells staff something untrue.** When a prefilter is on and
+   the reader's *own* search or chip empties the list, the page still says the
+   projects "moved on after Attention counted it". Raised by the architect in
+   round 1, by me in round 2, and by Codex again on HEAD — three times, still
+   present. It is user-facing copy in the exact surface this run exists to make
+   trustworthy. Decision Q3.
+2. **Stale mounted snapshot (Codex P1).** In principle a Projects page visited
+   earlier could serve old rows to a fresh count. The behavioural case is
+   exercised at HEAD — criterion 6's browser test moves a project between visits
+   and both the count and the list follow it, and the tester probed rail
+   round-trip, back-from-record, reload and Back/Forward, all green. Residual
+   risk is timing-dependent, not demonstrated. Debt.
+3. **V3 — a malformed 200 draws as a clear day.** A body that loses the
+   `projects` envelope parses to zero rows and the gate says nothing needs you.
+   Requires a Worker contract break to reach; the developer's field-level guard
+   already covers the narrower case. LOW, debt, with the tester's failing test
+   attached and ready.
+4. **V1 — the signed-out copy and the "Signed in" chip** (see criterion 18).
+   Pre-existing, decision Q1.
+5. **Ponytail, −195 lines advisory.** `DEBT.md` records five mechanical shrinks
+   and correctly refuses to merge the two `ProjectsPage` location effects — that
+   split is load-bearing against a race that has failed twice. Do not reopen it.
 
-Architecture's deeper point on F1 deserves recording for the architect, not the
-developer: the parser turned a missing transport field into a valid-looking zero
-instead of a failure, which is the same shape of mistake criterion 15 exists to
-forbid one level up.
+**Review coverage caveat, stated plainly:** the four reviewers ran at `27b87e27`;
+HEAD is `8bc0e74e`, one further fix commit (the payload guard in
+`attention.ts:124-143`). The independent verify round is at HEAD and covers it.
+Separately, the Codex architecture review could not run `test:ops2` in its
+sandbox (`spawn EPERM`) — a tooling failure, not a clean pass; its static
+findings stand and are listed above, and the suites it could not run were run
+green by the tester.
 
-## ASSUMED: tags — still unsigned
+## `ASSUMED:` tags — still unsigned
 
-The owner answered D1 only. All four assumptions in spec §5 remain un-vetoed and
-carry to final sign-off:
+The owner answered D1 and nothing else. All four spec §5 assumptions remain
+un-vetoed and carry to final sign-off. None was contradicted by the build.
 
 1. Rows may overlap — one project counted by two rows is correct, not a bug.
-2. Filters ride the queue's **existing** control grammar; no new ops surface.
-   *(Implementation added a visible active-filter strip with a Clear — that is the
-   nameable control criterion 9 requires, not a new panel. Worth a glance at
-   sign-off.)*
-3. "Exactly N" compares against the filtered set's total; tests seed under the page
-   size rather than adding pagination logic.
-4. `/api/ops/summary` keeps its now-unread project counts; deleting them is a later
-   lean-out pass.
+2. The filters ride the queue's existing control grammar; no new ops surface.
+   *(Implementation: a visible active-filter strip with a Clear — the nameable,
+   reversible control criteria 9 and 10 require, not a new panel.)*
+3. "Exactly N" compares against the filtered set's total; tests seed under the
+   page size rather than the feature adding pagination logic.
+4. `/api/ops/summary` keeps its now-unread project counts; deleting them is a
+   later lean-out pass.
 
-None was contradicted by the build. All four need a yes or a veto before the
-feature is signed off.
+## Recommendation
 
-## What happens next
+Accept the feature. Ship it once Q3 is answered — the counts and the lists are
+right, the security half is genuinely executed, and the run's own anti-hollowness
+criterion did its job. The rest is debt with the tests already written for it.
 
-Back to the developer loop with F1, F2, architecture P1 and P2. Both blocking
-defects already have their failing test written, so the round trip is short:
+## Decisions needed
 
-    node --test --test-concurrency=1 scripts/tests/api.test.mjs        # F1 → 31 pass
-    npx playwright test scripts/tests/web/ops2-attention.spec.ts       # F2 → 21 pass
-    npx playwright test scripts/tests/web/ops2-projects.spec.ts        # no regression
-    npm run test:ops2 && npm run typecheck:gate                        # no regression
+**Q1 — Criterion 18's destination: does ops2 get a sign-in route, or does the
+refusal copy change?** Today a signed-out or lapsed-session staff member sees
+"Ask an administrator to add the role" while the account chip claims they are
+signed in. Pre-existing, not caused by this work.
+*Recommended:* accept this run as-is, and raise a separate small ticket to fix
+the copy (offer sign-in when there is no session at all; keep the role message
+only for a real session lacking the role) plus the "Signed in" chip. Not worth a
+new sign-in page while Cloudflare Access owns the door.
 
-Then re-verify, and this acceptance is re-run against criteria 1–5, 8 and 17. The
-15 met criteria do not need re-litigating unless the fix disturbs them.
+**Q2 — The durable coverage gap: seed rows, or leave the live probe as one-off?**
+Criteria 1–4 are proven live today but only stubbed in the permanent suite.
+*Recommended:* yes to a small follow-up — four rows in `scripts/db/seed.sql` and
+promote `live-attention-probe.mjs` into `scripts/tests/web/`; delete the rest of
+the `tests-verify` residue including the two committed probe files. Fix tier, one
+short round, no pipeline.
+
+**Q3 — The empty-state falsehood: fix now or ship with it?** When your own search
+or chip empties a prefiltered list, the page claims the projects moved on. Third
+time raised.
+*Recommended:* fix before deploy, in one `conduct fix` round — it is a lie on the
+surface whose entire job is to be trusted, and it is a copy-plus-one-condition
+change.
+
+**Q4 — Sign off the four `ASSUMED:` tags above (yes to all, or name the veto)?**
+*Recommended:* yes to all four. Overlap is real behaviour staff already expect,
+the strip is the control not a new panel, pagination stays out, and deleting the
+summary's unread counts belongs to the backend lean-out pass you already
+scheduled for after ops2.

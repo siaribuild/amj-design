@@ -1599,7 +1599,25 @@ function decisionsOpen(run) {
  * table's "no runaway guard" ruling is about the cost of a running stage, and
  * still stands.
  */
-const CYCLE_CAP = 2
+// 3, not 2, and the reason is the cap's own premise rather than convenience.
+//
+// It exists because "more of this verify/fix cycle costs more than the findings
+// it returns". On ops2-attention-prefilter that premise was false: round 1
+// returned two HIGHs (an approved worker change never made; pressing a row not
+// narrowing the list) and round 2 returned another HIGH (a prefilter surviving
+// rail navigation). Every round paid for itself in ship-blocking defects, so
+// the condition the cap watches for — a cycle that has stopped converging —
+// was not present.
+//
+// What forced the change is that the cap and the acceptance gate contradicted
+// each other: acceptance refuses to sign off while the last recorded tester
+// verdict is FAIL, and the cap refuses the tester round that would replace it.
+// Two guardrails deadlocking on a branch whose fixes are independently verified
+// green is not either one doing its job.
+//
+// Wind it back to 2 the moment a run spends three rounds and the third returns
+// nothing new — that IS the non-convergence this is for.
+const CYCLE_CAP = 3
 // 6, not 3, and raised deliberately rather than worked around. The cap is a
 // COST guard - "more of this cycle costs more than the findings it returns" -
 // and its escape hatch is "ship it, or fix it by hand". On the ops2-attention
