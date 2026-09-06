@@ -160,22 +160,23 @@ in the pipeline, not in this feature.
 ## RESOLVED against production, 2026-09-06
 
 Item 1 above (the money units) is settled by live evidence. Recorded here
-because the guesses were wrong in both directions and the correction cost a
+because the guesses were wrong in both directions, and one of them cost a
 silent alarm.
 
 | Field | Guess | Truth | How it was settled |
 |---|---|---|---|
-|  | dollars | **CENTS** | Owner read $4.28 on the Cloudflare dashboard; the card showed $428.07. Fixed by dividing by 100. The direction mattered: $4.28 is BELOW the $5 floor, so the hundredfold reading put it far above and the low-credit alarm stayed silent on the day it was due. |
-| gateway  | unknown, left unconverted | **DOLLARS** | Live snapshot returned  against the owner's known $20/month cap. Converting it on the strength of the balance finding would have shown a $0.20 cap and screamed red permanently. |
-| account  | cents (documented) | **CENTS** | The only one Cloudflare documents. |
-| GraphQL  | dollars | **DOLLARS** | $14.74 against the $20 cap, 74% — consistent, and the cap is enforced in the same unit. |
+| `credit-balance.balance` | dollars | **CENTS** | The owner read $4.28 on the Cloudflare dashboard while the card showed $428.07. Fixed by dividing by 100. The direction mattered: $4.28 is BELOW the $5 floor, so the hundredfold reading put it far above and the low-credit alarm stayed silent on the day it was due. |
+| gateway `spend_limits.rules[].limit` | unknown — deliberately left unconverted | **DOLLARS** | A live snapshot returned `capUsd: 20` against the owner's known $20/month cap. Converting it on the strength of the balance finding would have shown a $0.20 cap and screamed red permanently. |
+| account `config.amount` | cents (documented) | **CENTS** | The only one of the four Cloudflare documents at all. |
+| GraphQL `sum { cost }` | dollars | **DOLLARS** | $14.74 against the $20 cap — 74%, consistent, and the cap is enforced in the same unit. |
 
-The lesson worth keeping: two money fields in one product carried two different
-units, and only one of them was documented. Nothing here should convert a money
-figure on the strength of a sibling field.
+The lesson worth keeping: two money fields in one Cloudflare product carried
+two different units, and only one of them was documented. Nothing here should
+convert a money figure on the strength of a sibling field — the balance and the
+cap sit two API calls apart and disagree.
 
- was abandoned entirely — it answered HTTP
-500 to every request because it proxies Stripe's meter-summary API and inherits
-an alignment rule Cloudflare documents nowhere. Spend now comes from the
-gateway-scoped GraphQL analytics dataset, which is also the unit the cap is
-enforced in.
+`/ai-gateway/billing/usage-history` was abandoned entirely. It answered HTTP 500
+to every request because it proxies Stripe's meter-summary API and inherits an
+alignment rule Cloudflare documents nowhere. Spend now comes from the
+gateway-scoped GraphQL analytics dataset — which is also the number the cap is
+actually enforced against, so the percentage finally compares like with like.
