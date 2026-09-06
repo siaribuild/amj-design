@@ -67,7 +67,32 @@ export function AttentionPage() {
       )}
 
       {load.status === "ready" && (() => {
-        const groups = attentionGroups(load.counts, load.rows);
+        // CAUGHT, BECAUSE A THROW IN RENDER IS WORSE THAN THE BUG IT REPORTS.
+        // `attentionGroups` refuses a projects payload that carries no
+        // `statusCustomer` on any row, rather than counting every predicate to
+        // zero and drawing a screen that reads "nothing is waiting". Uncaught,
+        // that refusal would unmount the tree and leave a white page — trading
+        // a lie for a blank. The panel says the counts could not be read, which
+        // is the true statement, and the console stays navigable.
+        let groups;
+        try {
+          groups = attentionGroups(load.counts, load.rows);
+        } catch {
+          return (
+            <div className="pq-error ds-surface-card" data-testid="attention-error" role="alert">
+              <IonIcon icon={warningOutline} aria-hidden="true" />
+              <div>
+                <strong>Can't tell you what's waiting.</strong>
+                <IonNote className="ds-type-caption">
+                  The projects list came back without the fields these counts are
+                  read from, so none are shown. This is not an empty console —
+                  try again, or open Projects directly.
+                </IonNote>
+              </div>
+              <IonButton size="small" fill="outline" onClick={reload}>Try again</IonButton>
+            </div>
+          );
+        }
         if (groups.length === 0) {
           return (
             <div className="pq-empty" data-testid="attention-empty">

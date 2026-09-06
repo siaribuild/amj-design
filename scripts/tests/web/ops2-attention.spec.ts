@@ -524,3 +524,59 @@ test("the unauthorised panel has no retry — pressing it would fail the same wa
   await expect(error.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await context.close();
 });
+
+test("a row pressed from an already-mounted Projects still lists exactly its count", async ({ page }) => {
+  // CODEX, HIGH. Every other test in this file starts on Attention, so Projects
+  // mounts fresh and holds whatever the press produced. The real path is the
+  // other way round: a reader is ON Projects, goes to Attention, and presses a
+  // row. Projects is then already mounted holding OLDER rows, and — per the
+  // measured behaviour behind F4 — its own refresh hook may not fire at all.
+  // The count came from Attention's fetch; the list would come from a stale
+  // snapshot, and the two can disagree with no state change in between.
+  //
+  // The stub answers with ONE submission first and SIX rows afterwards, so a
+  // stale snapshot is visibly different from a fresh one: mount Projects on the
+  // thin answer, then let Attention and the press see the full set.
+  let call = 0;
+  await page.route(QUEUE_URL, (route) => {
+    call += 1;
+    return route.fulfill({ json: { projects: call === 1 ? [PA_PF[0]] : PA_PF } });
+  });
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+
+  // Mount Projects FIRST — this is the whole point of the case.
+  await page.goto(`${OPS2}/projects`);
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+
+  await page.locator('.ops2-nav__item[href$="/attention"]').click();
+  const row = page.getByTestId("attention-row-inReview");
+  await expect(row).toContainText("2");
+
+  await row.click();
+  await expect(page).toHaveURL(`${OPS2}/projects`);
+  // Two under_review rows in the full set (PB, PC). A stale one-row snapshot
+  // cannot produce them, so this fails if the queue is not re-read.
+  //
+  // MEASURED when this was written: three queue fetches happen on this path —
+  // the Projects mount, Attention's own, and Projects re-reading on the press.
+  // Codex raised the stale-snapshot case as HIGH on the premise that Projects'
+  // refresh may not fire here; it does. `ionViewWillEnter` fires on a PUSH
+  // entry like this press, and it is the rail-back that does not (F4). The
+  // test stays because the path was untested either way, and because it fails
+  // the moment that third fetch stops happening.
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+});
+
+test("a projects payload with no statusCustomer shows failure, not an empty console", async ({ page }) => {
+  // CODEX, MEDIUM. The endpoint dropping the field must not read as a clear day
+  // — and must not white-screen either: `attentionGroups` refuses the payload,
+  // so the page has to catch that and say it cannot tell.
+  const stripped = PA_PF.map(({ statusCustomer, ...rest }) => rest);
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: stripped } }));
+  await page.goto(ATTENTION);
+
+  await expect(page.getByTestId("attention-error")).toBeVisible();
+  await expect(page.getByTestId("attention-empty")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
+});

@@ -294,3 +294,23 @@ test("AttentionPage: consumes useSummary + useProjectQueue via combineLoads; per
   assert.ok(!/activeOrders/.test(bare), "AttentionPage must never read activeOrders");
   assert.ok(!/\bcustomers\b/.test(bare), "AttentionPage must never read the raw customers field");
 });
+
+test("rows that carry no statusCustomer are a payload failure, not an empty day", () => {
+  // CODEX, MEDIUM. `parseProjectQueue` under-claims a missing `statusCustomer`
+  // to "" so the row matches no predicate — deliberate for ONE odd row. But if
+  // the field is absent from the whole payload (the endpoint stops sending it,
+  // exactly as it did before this feature added it), every project predicate
+  // counts zero, and a zero count draws no row at all. The gate then shows
+  // silence, which reads as "nothing is waiting".
+  //
+  // That is the failure this whole surface exists to prevent — the same shape
+  // as F1, which shipped invisibly for precisely this reason — so rows present
+  // but universally status-less must be reported as a failure to tell, never as
+  // a clear day.
+  const stripped = PA_PF.map(({ statusCustomer, ...rest }) => rest);
+  assert.throws(
+    () => attentionGroups(SUMMARY_COUNTS, stripped),
+    /statusCustomer/,
+    "a payload with no statusCustomer anywhere must be refused, not counted as zero",
+  );
+});

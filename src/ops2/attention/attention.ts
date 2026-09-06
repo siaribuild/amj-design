@@ -121,6 +121,27 @@ export function attentionGroups(
 ): AttentionGroup[] {
   const groups: AttentionGroup[] = [];
 
+  // A PAYLOAD THAT LOST THE FIELD IS A FAILURE TO TELL, NOT A CLEAR DAY.
+  //
+  // `parseProjectQueue` under-claims a missing `statusCustomer` to "" so one odd
+  // row matches no predicate — right for one row, and dangerous for all of them.
+  // If the endpoint stops sending the field (exactly what it did before this
+  // feature added it), every project predicate counts zero, a zero count draws
+  // no row, and the gate shows silence. Silence on this screen reads as "nothing
+  // is waiting", which is the one wrong answer it must never give — and is
+  // precisely how F1 shipped invisibly.
+  //
+  // Rows present and NOT ONE carrying a status is not a state the API can
+  // legitimately produce: a real project always has a `status_customer`. So it
+  // is a broken payload, and it is thrown rather than counted. `useSummary`'s
+  // caller renders the error panel, which says the counts could not be read.
+  if (rows.length > 0 && rows.every((r) => !r.statusCustomer)) {
+    throw new Error(
+      "attention: no row carried a statusCustomer — the projects payload is missing the field, " +
+      "so no count can be trusted (drawing zero here would read as an empty console)",
+    );
+  }
+
   const projects = projectRows(rows);
   if (projects.length > 0) {
     groups.push({ id: "projects", label: destination("projects").label, rows: projects });
