@@ -5,7 +5,7 @@ function glazingOptionsFromNewProfiles() {
   for (const profile of NEW_PROFILES) {
     for (const row of profile.rows) {
       const id = row.glazing._ref;
-      if (!seen.has(id)) seen.set(id, { _id: id, _type: "option", name: id, isDefault: false, type: "glazingType" });
+      if (!seen.has(id)) seen.set(id, { _id: id, _rev: "rev-1", _type: "option", name: id, isDefault: false, type: "glazingType" });
     }
   }
   return [...seen.values()];
@@ -17,14 +17,14 @@ export function makeWorld() {
     { _id: "system-100", slug: "sys-100" },
     { _id: "system-150", slug: "sys-150" },
   ];
-  const hardware = Object.values(HW).map((id) => ({ _id: id, name: id, type: "hardware" }));
-  const colours = [{ _id: DEFAULT_COLOUR, name: "Night Sky", isDefault: true, type: "colour" }];
+  const hardware = Object.values(HW).map((id) => ({ _id: id, _rev: "rev-1", name: id, type: "hardware" }));
+  const colours = [{ _id: DEFAULT_COLOUR, _rev: "rev-1", name: "Night Sky", isDefault: true, type: "colour" }];
   const options = [...glazingOptionsFromNewProfiles(), ...hardware, ...colours];
 
   const profiles = Object.entries(KEEP_PUBLISHED).map(([id, keep]) => {
     const kept = { _key: "keep", glazing: keep.glazing ?? "glz-existing", wersWindowId: keep.wers ?? null, published: true, uValue: 3.0, shgc: 0.4 };
     const other = { _key: "other", glazing: "glz-other", wersWindowId: null, published: false, uValue: 3.5, shgc: 0.5 };
-    return { _id: id, rows: [kept, other] };
+    return { _id: id, _rev: "rev-1", rows: [kept, other] };
   });
 
   const products = new Map();
@@ -32,6 +32,7 @@ export function makeWorld() {
     if (p.create) continue; // not yet created
     products.set(p.slug, {
       _id: `product-${p.slug}`,
+      _rev: "rev-1",
       slug: { current: p.slug },
       name: p.name ?? null,
       familyName: "Existing Family",
@@ -43,7 +44,7 @@ export function makeWorld() {
     });
   }
   for (const slug of DISABLE) {
-    products.set(slug, { _id: `product-${slug}`, slug: { current: slug }, disabled: false });
+    products.set(slug, { _id: `product-${slug}`, _rev: "rev-1", slug: { current: slug }, disabled: false });
   }
 
   const fullProfiles = NEW_PROFILES.map((p) => JSON.parse(JSON.stringify(p)));
@@ -97,9 +98,7 @@ export function makeTransport(world) {
         })
         .sort((a, b) => a.slug.localeCompare(b.slug));
     } else {
-      const slugsParam = u.searchParams.get("$slugs");
-      const slugs = slugsParam ? JSON.parse(slugsParam) : [];
-      result = slugs.map((s) => world.products.get(s)).filter(Boolean);
+      result = [...world.products.values()];
     }
     return { ok: true, status: 200, json: async () => ({ result }), text: async () => JSON.stringify({ result }) };
   };

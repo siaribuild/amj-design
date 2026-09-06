@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { run, resolveToken } from "../catalogue/apply-go-live-min.mjs";
-import { plan, assertSafe, DISABLE, KEEP_PUBLISHED, alignHardware, buildDimensionRule, P, NEW_PROFILES, HW, DEFAULT_COLOUR, buildSpecs, buildKeySpecs } from "../catalogue/go-live-plan.mjs";
+import { plan, assertSafe, DISABLE, KEEP_PUBLISHED, alignHardware, buildDimensionRule, P, NEW_PROFILES, HW, DEFAULT_COLOUR, buildSpecs, buildKeySpecs, same } from "../catalogue/go-live-plan.mjs";
 import { makeWorld, makeTransport, altered } from "./fixtures/go-live-world.mjs";
 
 test("dry run: zero writes, correct summary line", async () => {
@@ -95,6 +95,54 @@ test("disable patch sets exactly {disabled: true}", () => {
   const slug = DISABLE[0];
   const m = mutations.find((m) => m.patch?.id === `product-${slug}`);
   assert.deepEqual(m.patch.set, { disabled: true });
+});
+
+test("sheet product patch re-enables: a disabled fixture product gets disabled:false in its set", () => {
+  const world = makeWorld();
+  const slug = P.find((p) => !p.create).slug;
+  world.products.get(slug).disabled = true;
+  const { mutations } = plan(world);
+  const m = mutations.find((m) => m.patch?.id === `product-${slug}`);
+  assert.ok(m, "expected a patch mutation for this product");
+  assert.equal(m.patch.set.disabled, false);
+});
+
+test("withdrawn set is the complement of the sheet: an off-list product not on P or DISABLE is disabled", () => {
+  const world = makeWorld();
+  world.products.set("off-list-product", { _id: "product-off-list-product", _rev: "rev-1", slug: { current: "off-list-product" }, disabled: false });
+  const { mutations } = plan(world);
+  const m = mutations.find((m) => m.patch?.id === "product-off-list-product");
+  assert.ok(m, "expected a disable patch for an off-list product");
+  assert.equal(m.patch.set.disabled, true);
+});
+
+test("same() ignores key order in nested objects", () => {
+  assert.equal(same({ _type: "reference", _ref: "x" }, { _ref: "x", _type: "reference" }), true);
+});
+
+test("create target that exists under a different _id is a named problem, no mutation", () => {
+  const world = makeWorld();
+  const slug = "amj150st-awning-window";
+  world.products.set(slug, { _id: "xyz", slug: { current: slug }, disabled: false });
+  const { mutations, problems } = plan(world);
+  assert.ok(problems.some((p) => p.includes(slug) && p.includes("xyz")), problems.join("\n"));
+  assert.ok(!mutations.some((m) => m.patch?.id === `product-${slug}` || m.patch?.id === "xyz" || m.createIfNotExists?._id === `product-${slug}`));
+});
+
+test("patches carry ifRevisionID matching the fetched document's _rev", () => {
+  const { mutations } = plan(makeWorld());
+  const patches = mutations.filter((m) => m.patch);
+  assert.ok(patches.length > 0, "expected at least one patch mutation");
+  for (const m of patches) assert.equal(m.patch.ifRevisionID, "rev-1", JSON.stringify(m));
+});
+
+test("a document with no _rev in the world is a named problem, not an unguarded patch", () => {
+  const world = makeWorld();
+  const slug = DISABLE[0];
+  world.products.set(slug, { _id: `product-${slug}`, slug: { current: slug }, disabled: false });
+  const { mutations, problems } = plan(world);
+  assert.ok(problems.some((p) => p.includes(slug) && p.includes("_rev")), problems.join("\n"));
+  assert.ok(!mutations.some((m) => m.patch?.id === `product-${slug}`));
 });
 
 test("no set anywhere in the plan carries a slug key", () => {
@@ -310,7 +358,7 @@ test("field: specs and keySpecs both carry a Grade entry", () => {
 // — a wrongly-defaulted colour gets demoted to false, never removed.
 test("field: Night Sky is the only isDefault colour, no colour removed", () => {
   const world = makeWorld();
-  const wrong = { _id: "option-colour-wrong", name: "Wrong", isDefault: true, type: "colour" };
+  const wrong = { _id: "option-colour-wrong", _rev: "rev-1", name: "Wrong", isDefault: true, type: "colour" };
   world.options = [...world.options, wrong];
   const { mutations } = plan(world);
   assert.equal(mutations.find((m) => m.patch?.id === DEFAULT_COLOUR), undefined);

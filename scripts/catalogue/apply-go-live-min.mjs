@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { plan, assertSafe, P, DISABLE, NEW_PROFILES, normProfile, same } from "./go-live-plan.mjs";
+import { plan, assertSafe, P, NEW_PROFILES, normProfile, same } from "./go-live-plan.mjs";
 
 const PROJECT_ID = "xjtrm1ex";
 const DATASET = "production";
@@ -57,16 +57,15 @@ async function mutate({ fetchImpl, token }, mutations) {
 
 // ── Plan ──────────────────────────────────────────────────────────────────────
 async function loadWorld(io) {
-  const slugs = [...P.map((p) => p.slug), ...DISABLE];
   const [products, refs] = await Promise.all([
-    query(io, `*[_type=="product" && !(_id in path("drafts.**")) && slug.current in $slugs]{..., "familyName": family->name, "categoryName": category->name}`, { slugs }),
+    query(io, `*[_type=="product" && !(_id in path("drafts.**"))]{..., "familyName": family->name, "categoryName": category->name}`),
     query(io, `{
       "families": *[_type=="family" && !(_id in path("drafts.**"))]{_id, name},
       "categories": *[_type=="category"]{_id, name},
       "systems": *[_type=="frameSystem"]{_id, "slug": slug.current},
-      "profiles": *[_type=="thermalProfile"]{_id, rows[]{_key, "glazing": glazing._ref, published, uValue, shgc, wersWindowId}},
+      "profiles": *[_type=="thermalProfile"]{_id, _rev, rows[]{_key, "glazing": glazing._ref, published, uValue, shgc, wersWindowId}},
       "fullProfiles": *[_type=="thermalProfile" && _id in $profileIds]{_id, name, slug, frameTechnology, rows},
-      "options": *[_type=="option"]{_id, name, isDefault, "type": optionType->slug.current}
+      "options": *[_type=="option"]{_id, _rev, name, isDefault, "type": optionType->slug.current}
     }`, { profileIds: NEW_PROFILES.map((p) => p._id) }),
   ]);
   return { products: new Map(products.map((p) => [p.slug.current, p])), ...refs };

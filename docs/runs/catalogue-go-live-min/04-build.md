@@ -79,3 +79,25 @@ Deferred, not in this round (per `FIX-1.md`): Ponytail dead-code deletions and t
 - `npm run test:heavy` — run separately; result appended below once complete.
 
 Committed as one commit covering `scripts/catalogue/go-live-plan.mjs`, `scripts/tests/catalogue-go-live.test.mjs`, `scripts/tests/fixtures/go-live-world.mjs`, and this file. The ~38 uncommitted files from the other effort (`src/**`, `.impeccable/config.json`, …) were left untouched and uncommitted.
+
+## Fix round 2 — round-2 review findings (Codex + architecture conformance), 2026-09-06
+
+Five findings from `FIX-2.md`, all fixed test-first:
+
+1. **Every sheet product is re-enabled (Codex P1).** The product patch never wrote `disabled`, so a sheet product that was already disabled in Sanity stayed hidden after `--write`. Fixed: every sheet product's `set` now carries `disabled: false`. Test: a fixture sheet product with `disabled: true` → its patch set has `disabled: false`.
+
+2. **The withdrawn set is the complement of the sheet, not a hard-coded list (Codex P2).** `loadWorld` fetched only `P` slugs plus the hard-coded `DISABLE` list, so an off-sheet product neither list named was never disabled. Fixed: `loadWorld` now fetches every non-draft product, and the planner disables every product whose slug is not in `P`; `DISABLE` is kept only as a test-only expectation (the 11 known slugs are asserted to all be in the computed complement). Test: a fixture product with a slug on neither list → disabled by the plan.
+
+3. **Comparison must ignore key order (Codex P2, architecture Medium).** `same()` was `JSON.stringify` equality, so a reference object with reversed key order from Sanity read as a difference — spurious patches on replan, `--verify` failing after a correct write. Fixed: `same()` now uses `node:util`'s `isDeepStrictEqual`; the dead `stable` constant was deleted while the line was open. Test: an existing document whose nested object has reversed key order produces no patch.
+
+4. **Patches carry a revision precondition (architecture High).** `loadWorld` read mutable documents and `mutate` submitted patches with no `_rev` check, so a Studio edit between read and write would be silently overwritten. Fixed: `loadWorld`'s GROQ projections for profiles and options now include `_rev` (products already got it via the `...` spread); a new `withRev(doc, label, problems)` helper in `go-live-plan.mjs` returns the doc's `_rev` or, if absent, pushes a named problem and returns `null` so the call site skips the mutation instead of sending an unguarded patch. All five patch-construction sites (profile-publish, product create-exists, product normal-amend, withdrawn-disable, default-colour) now call `withRev` and thread the result into `{ patch: { id, ifRevisionID: rev, set } }`. `assertSafe`'s patch-key allow-list now admits `ifRevisionID` alongside `id`/`set`. Tests: a patch for a fetched document carries its `_rev` as `ifRevisionID`; a fixture product with no `_rev` produces a named problem containing the slug and "_rev", with no mutation for that document.
+
+5. **A create target that exists under a different `_id` is a problem (architecture Medium).** When a created product's slug already existed, the planner patched the assumed `product-<slug>` id rather than the fetched document's real `_id`. Fixed: if a document with that slug exists and its `_id` is not the assumed one, `plan()` emits a named identity-collision problem and no mutation; otherwise it patches `existing._id`. Test: fixture product with slug `amj150st-awning-window` and `_id` `xyz` → problem, no mutation.
+
+Deferred, not in this round (per `FIX-2.md`): the self-certifying-verification test restructuring, the pricing-reconciler runbook step, Ponytail round 2, and the `src/styles/theme.css` finding (the other effort's uncommitted work) — all recorded as DEBT / routed to the runbook, not this script.
+
+**Test results, run in full this round:**
+- `npm run test:go-live` — 52/52 green (was 46 before this round; +6 new tests across findings 1, 2, 3, 4×2, 5).
+- `npm run typecheck:gate` — clean, 0 fatal errors (58 pre-existing non-fatal, unchanged).
+
+Committed as one commit covering `scripts/catalogue/apply-go-live-min.mjs`, `scripts/catalogue/go-live-plan.mjs`, `scripts/tests/catalogue-go-live.test.mjs`, `scripts/tests/fixtures/go-live-world.mjs`, and this file. The ~38 uncommitted files from the other effort stayed untouched and uncommitted.

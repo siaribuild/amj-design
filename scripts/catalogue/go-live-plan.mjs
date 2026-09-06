@@ -1,5 +1,6 @@
 // Pure sheet data + plan() logic for the 2026-09-06 catalogue go-live.
 // No I/O here — network/token/CLI concerns live in apply-go-live-min.mjs.
+import { isDeepStrictEqual } from "node:util";
 const ref = (_ref) => ({ _type: "reference", _ref });
 
 // ── Vocabulary ────────────────────────────────────────────────────────────────
@@ -430,8 +431,15 @@ function alignHardware(options, hardwareId) {
   return list;
 }
 const rekey = (arr, prefix) => (arr ?? []).map((o, i) => ({ ...o, _key: `${prefix}${i}` }));
-const stable = (v) => JSON.stringify(v, Object.keys(v ?? {}).sort ? undefined : undefined);
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const same = (a, b) => isDeepStrictEqual(a, b);
+
+// A patch with no revision precondition can silently overwrite a Studio edit
+// made between read and write. Refuse to patch a doc the world fetched with
+// no _rev — name it as a problem instead of sending an unguarded patch.
+function withRev(doc, label, problems) {
+  if (!doc._rev) { problems.push(`${label}: no _rev — refusing to patch without a revision precondition`); return null; }
+  return doc._rev;
+}
 
 // Normalize a thermalProfile doc to its authored content only, so a real/fixture
 // doc and a NEW_PROFILES literal can be compared for drift with same(). Drops
@@ -491,10 +499,12 @@ function plan(world) {
     if (target[0].uValue == null || target[0].shgc == null) problems.push(`profile ${id}: the row to keep has no Uw/SHGC`);
     const flips = rows.filter((r) => (r.published !== false) !== (r === target[0]));
     if (!flips.length) continue;
+    const rev = withRev(pr, `profile ${id}`, problems);
+    if (!rev) continue;
     // One patch per row that changes, addressed by _key — never a whole-array rewrite.
     const set = {};
     for (const r of flips) set[`rows[_key=="${r._key}"].published`] = r === target[0];
-    mutations.push({ patch: { id, set } });
+    mutations.push({ patch: { id, ifRevisionID: rev, set } });
     report.push(`profile ${id}: ${flips.filter((r) => r !== target[0]).length} row(s) unpublished, keep ${keep.wers ?? keep.glazing}`);
   }
   // 4. products. A created product copies its options from the copy source's
@@ -523,6 +533,7 @@ function plan(world) {
     };
     const set = {
       name,
+      disabled: false,
       frameSystem: ref(systemId.get(p.system)),
       thermalProfile: ref(p.profile),
       standardGlass: p.glass,
@@ -545,11 +556,17 @@ function plan(world) {
       };
       if (world.products.has(p.slug)) {
         const existingCreated = world.products.get(p.slug);
+        if (existingCreated._id !== `product-${p.slug}`) {
+          problems.push(`create target ${p.slug} already exists under _id ${existingCreated._id}, not product-${p.slug}`);
+          continue;
+        }
         const changed = Object.keys(set).filter((k) => !same(existingCreated[k], set[k]));
         if (changed.length) {
+          const rev = withRev(existingCreated, `product ${p.slug}`, problems);
+          if (!rev) continue;
           const patch = {};
           for (const k of changed) patch[k] = set[k];
-          mutations.push({ patch: { id: `product-${p.slug}`, set: patch } });
+          mutations.push({ patch: { id: existingCreated._id, ifRevisionID: rev, set: patch } });
           report.push(`product ${p.slug}: exists, ${changed.join(", ")}`);
           amend++;
         } else {
@@ -561,26 +578,32 @@ function plan(world) {
     }
     const changed = Object.keys(set).filter((k) => !same(existing[k], set[k]));
     if (!changed.length) { report.push(`product ${p.slug}: unchanged`); continue; }
+    const rev = withRev(existing, `product ${p.slug}`, problems);
+    if (!rev) continue;
     const patch = {};
     for (const k of changed) patch[k] = set[k];
-    mutations.push({ patch: { id: existing._id, set: patch } });
+    mutations.push({ patch: { id: existing._id, ifRevisionID: rev, set: patch } });
     amend++;
     const dimNote = same(existing.dimensionRule, set.dimensionRule) ? "" : ` dims ${JSON.stringify(existing.dimensionRule && [existing.dimensionRule.minWidthMm, existing.dimensionRule.maxWidthMm, existing.dimensionRule.minHeightMm, existing.dimensionRule.maxHeightMm])} → ${JSON.stringify(p.dim)}`;
     report.push(`product ${p.slug}: ${changed.join(", ")}${dimNote}`);
   }
   // 5. withdrawn.
-  for (const slug of DISABLE) {
-    const d = world.products.get(slug);
-    if (!d) { problems.push(`product to disable ${slug} does not exist`); continue; }
+  const sheetSlugs = new Set(P.map((p) => p.slug));
+  for (const [slug, d] of world.products) {
+    if (sheetSlugs.has(slug)) continue;
     if (d.disabled === true) continue;
-    mutations.push({ patch: { id: d._id, set: { disabled: true } } });
+    const rev = withRev(d, `product ${slug}`, problems);
+    if (!rev) continue;
+    mutations.push({ patch: { id: d._id, ifRevisionID: rev, set: { disabled: true } } });
     report.push(`disable ${slug}`);
   }
   // 6. one default colour.
   for (const o of world.options.filter((o) => o.type === "colour")) {
     const want = o._id === DEFAULT_COLOUR;
     if ((o.isDefault === true) === want) continue;
-    mutations.push({ patch: { id: o._id, set: { isDefault: want } } });
+    const rev = withRev(o, `colour ${o.name}`, problems);
+    if (!rev) continue;
+    mutations.push({ patch: { id: o._id, ifRevisionID: rev, set: { isDefault: want } } });
     report.push(`colour ${o.name}: isDefault ${want}`);
   }
   if (!world.options.some((o) => o._id === DEFAULT_COLOUR)) problems.push(`default colour ${DEFAULT_COLOUR} does not exist`);
@@ -596,7 +619,7 @@ function assertSafe(mutations) {
   for (const m of mutations) {
     for (const k of Object.keys(m)) if (!ALLOWED_MUTATION_KEYS.has(k)) violations.push(`disallowed mutation key "${k}"`);
     if (m.patch) {
-      for (const k of Object.keys(m.patch)) if (k !== "id" && k !== "set") violations.push(`disallowed patch key "${k}"`);
+      for (const k of Object.keys(m.patch)) if (k !== "id" && k !== "set" && k !== "ifRevisionID") violations.push(`disallowed patch key "${k}"`);
       if (m.patch.id?.startsWith("drafts.")) violations.push(`disallowed draft target id "${m.patch.id}"`);
       if (m.patch.set) {
         for (const k of Object.keys(m.patch.set)) if (k === "slug" || k.startsWith("slug.")) violations.push(`disallowed set key "${k}"`);
