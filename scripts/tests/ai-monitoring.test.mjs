@@ -377,8 +377,10 @@ test("fetchMoneyNumbers: gateway cap failure falls back to spending-limit with c
     // Cloudflare's documented shapes, not the ones this fixture first assumed:
     // usage is history[].aggregated_value, and the account cap is
     // config.amount in CENTS.
-    if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 8 }] } }) };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 8 } }] },
+      ] } } }) };
     }
     if (url.includes(`/ai-gateway/gateways/`)) {
       return { ok: false, status: 404 };
@@ -386,7 +388,6 @@ test("fetchMoneyNumbers: gateway cap failure falls back to spending-limit with c
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: true, config: { amount: 2000, duration: "monthly" } } }) };
     }
-    // The scope check: one gateway on the account, so its spend is the account's.
     if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
@@ -639,18 +640,10 @@ test("fetchMoneyNumbers: decodes the documented Cloudflare response shapes", asy
     if (url.includes("/billing/credit-balance")) {
       return { ok: true, json: async () => ({ result: { balance: 1234, has_default_payment_method: true } }) };
     }
-    if (url.includes("/billing/usage-history")) {
-      return {
-        ok: true,
-        json: async () => ({
-          result: {
-            history: [
-              { id: "a", aggregated_value: 5, start_time: 1, end_time: 2 },
-              { id: "b", aggregated_value: 3, start_time: 2, end_time: 3 },
-            ],
-          },
-        }),
-      };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 8 } }] },
+      ] } } }) };
     }
     if (url.includes("/ai-gateway/gateways/")) {
       return {
@@ -660,7 +653,6 @@ test("fetchMoneyNumbers: decodes the documented Cloudflare response shapes", asy
         }),
       };
     }
-    // The scope check: one gateway on the account, so its spend is the account's.
     if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
@@ -672,25 +664,32 @@ test("fetchMoneyNumbers: decodes the documented Cloudflare response shapes", asy
   assert.equal(result.budget.billedSpendUsd, 8, "5 + 3, summed across the history entries");
   assert.equal(result.budget.capUsd, 20);
   assert.equal(result.budget.capSource, "gateway");
-  // value_grouping_window is a REQUIRED query parameter; without it the usage
-  // call is a 400 and the money half of the feature never works at all.
+  // Spend is asked of the gateway's own analytics, not the account-scoped
+  // billing endpoint this test was first written against.
   assert.ok(
-    seen.some((u) => u.includes("/billing/usage-history") && /value_grouping_window=(day|hour)/.test(u)),
-    "usage-history must carry the required value_grouping_window parameter",
+    seen.some((u) => u.endsWith("/client/v4/graphql")),
+    "spend must come from the analytics query",
+  );
+  assert.ok(
+    !seen.some((u) => u.includes("/billing/usage-history")),
+    "the account-scoped usage endpoint is no longer called",
   );
 });
 
 test("fetchMoneyNumbers: a 200 that does not carry the documented fields is unavailable, never a half-filled snapshot", async () => {
   const fetchImpl = async (url) => {
     if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: {} }) };
-    if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: { history: [] } }) };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 0 } }] },
+      ] } } }) };
+    }
     if (url.includes("/ai-gateway/gateways/")) {
       return { ok: true, json: async () => ({ result: { spend_limits: { rules: [] } } }) };
     }
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: false, config: { amount: null, duration: null } } }) };
     }
-    // The scope check: one gateway on the account, so its spend is the account's.
     if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
@@ -707,8 +706,10 @@ test("fetchMoneyNumbers: the gateway cap is the unscoped cost rule, not simply t
   // so reporting it as THE cap understates the budget the console claims.
   const fetchImpl = async (url) => {
     if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
-    if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 1 }] } }) };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 1 } }] },
+      ] } } }) };
     }
     if (url.includes("/ai-gateway/gateways/")) {
       return {
@@ -726,7 +727,6 @@ test("fetchMoneyNumbers: the gateway cap is the unscoped cost rule, not simply t
         }),
       };
     }
-    // The scope check: one gateway on the account, so its spend is the account's.
     if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
@@ -744,14 +744,15 @@ test("fetchMoneyNumbers: the account fallback converts cents to dollars", async 
   // overstatement of the cap.
   const fetchImpl = async (url) => {
     if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 1234 } }) };
-    if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 8 }] } }) };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 8 } }] },
+      ] } } }) };
     }
     if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: true, config: { amount: 2000, duration: "monthly" } } }) };
     }
-    // The scope check: one gateway on the account, so its spend is the account's.
     if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
@@ -778,52 +779,11 @@ test("capBreached: the page's warning and the server's red flag agree at the rou
   assert.equal(capBreached({ ...budget, capUsd: 0 }, 80), true);
 });
 
-test("fetchMoneyNumbers: an empty usage history is zero spend, not a broken snapshot", async () => {
-  // A billing window with no billable requests legitimately returns history:[].
-  // Treating that as malformed hid the balance and the cap as well — and with
-  // them the low-credit warning, in exactly the quiet month where the console
-  // has least else to say.
-  const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 300 } }) };
-    if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: { history: [] } }) };
-    if (url.includes("/ai-gateway/gateways/")) {
-      return {
-        ok: true,
-        json: async () => ({ result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } } }),
-      };
-    }
-    // The scope check: one gateway on the account, so its spend is the account's.
-    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
-    throw new Error(`unexpected url ${url}`);
-  };
-  const result = await fetchMoneyNumbers(
-    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
-    fetchImpl,
-  );
-  assert.deepEqual(result.balance, { available: true, creditBalanceUsd: 3 });
-  assert.equal(result.budget.available, true);
-  assert.equal(result.budget.billedSpendUsd, 0);
-  assert.equal(result.budget.capUsd, 20);
-  // And the balance still drives the floor warning it is there to drive.
-  assert.equal(evaluateRed({ money: result }, 5, 80), true);
-});
+// REMOVED: fetchMoneyNumbers: an empty usage history is zero spend, not a broken snapshot
+// superseded by "a gateway with no traffic in the window has spent nothing".
 
-test("fetchMoneyNumbers: a usage response with no history array at all is still malformed", async () => {
-  const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 300 } }) };
-    if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: {} }) };
-    if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
-    if (url.includes("/billing/spending-limit")) return { ok: false, status: 404 };
-    // The scope check: one gateway on the account, so its spend is the account's.
-    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
-    throw new Error(`unexpected url ${url}`);
-  };
-  const result = await fetchMoneyNumbers(
-    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
-    fetchImpl,
-  );
-  assert.equal(result.budget.available, false);
-});
+// REMOVED: fetchMoneyNumbers: a usage response with no history array at all is still malformed
+// superseded by the GraphQL unexpected-shape path.
 
 test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
   // Saved rules survive switching the limit off. Reading them anyway reports a
@@ -831,8 +791,10 @@ test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
   // actually capped.
   const fetchImpl = async (url) => {
     if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
-    if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 19 }] } }) };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 19 } }] },
+      ] } } }) };
     }
     if (url.includes("/ai-gateway/gateways/")) {
       return {
@@ -843,7 +805,6 @@ test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: false, config: { amount: 5000, duration: "monthly" } } }) };
     }
-    // The scope check: one gateway on the account, so its spend is the account's.
     if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
@@ -901,82 +862,11 @@ test("parseMonitoringSnapshot: a takenAt that is not a real instant is malformed
   assert.ok(parseMonitoringSnapshot(VALID_SNAPSHOT));
 });
 
-test("fetchMoneyNumbers: usage is asked for over the cap's OWN window, not all time", async () => {
-  // The cap is a per-gateway rule with its own window; usage-history defaults to
-  // the account's whole history. Dividing one by the other described no budget
-  // that Cloudflare actually enforces, and the percentage only ever grew.
-  const seen = [];
-  const fetchImpl = async (url) => {
-    seen.push(url);
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
-    if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 4 }] } }) };
-    }
-    if (url.includes("/ai-gateway/gateways/")) {
-      return {
-        ok: true,
-        json: async () => ({
-          result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } },
-        }),
-      };
-    }
-    if (url.includes("/ai-gateway/gateways")) {
-      return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
-    }
-    // The scope check: one gateway on the account, so its spend is the account's.
-    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
-    throw new Error(`unexpected url ${url}`);
-  };
-  const result = await fetchMoneyNumbers(
-    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
-    fetchImpl,
-  );
-  const usage = seen.find((u) => u.includes("/billing/usage-history"));
-  const start = Number(new URL(usage).searchParams.get("start_time"));
-  const end = Number(new URL(usage).searchParams.get("end_time"));
-  assert.ok(start > 0 && end > 0, "usage-history must be bounded to the cap's window");
-  const spanDays = Math.round((end - start) / 86400000);
-  assert.equal(spanDays, 30, "a 2592000s rule window is thirty days of usage");
-  assert.equal(result.budget.available, true);
-  assert.equal(result.budget.billedSpendUsd, 4);
-  assert.equal(result.budget.capUsd, 20);
-});
+// REMOVED: fetchMoneyNumbers: usage is asked for over the cap's OWN window, not all time
+// superseded by the GraphQL window assertion, which also pins the gateway filter.
 
-test("fetchMoneyNumbers: a second gateway makes the cap percentage unattributable, not wrong", async () => {
-  // usage-history is ACCOUNT-scoped and cannot be filtered by gateway. With one
-  // gateway the account's spend is that gateway's spend; with two it is not,
-  // and dividing it by one gateway's cap overstates the percentage.
-  const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 300 } }) };
-    if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 4 }] } }) };
-    }
-    if (url.includes("/ai-gateway/gateways/")) {
-      return {
-        ok: true,
-        json: async () => ({
-          result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } },
-        }),
-      };
-    }
-    if (url.includes("/ai-gateway/gateways")) {
-      return { ok: true, json: async () => ({ result: [{ id: "gw1" }, { id: "gw2" }] }) };
-    }
-    // The scope check: one gateway on the account, so its spend is the account's.
-    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
-    throw new Error(`unexpected url ${url}`);
-  };
-  const result = await fetchMoneyNumbers(
-    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
-    fetchImpl,
-  );
-  assert.equal(result.budget.available, false);
-  assert.equal(result.budget.reason, "spend_not_attributable");
-  // The balance is untouched by any of that, and still raises its own alarm.
-  assert.equal(result.balance.available, true);
-  assert.equal(result.balance.creditBalanceUsd, 3);
-  assert.equal(evaluateRedFlags({ money: result }, 5, 80).balance, true);
-});
+// REMOVED: fetchMoneyNumbers: a second gateway makes the cap percentage unattributable, not wrong
+// spend is now filtered by gateway, so a second gateway changes nothing.
 
 test("fetchMoneyNumbers: a failed cap lookup never silences a real low-credit alarm", async () => {
   // One catch around all three requests threw away a perfectly good balance
@@ -984,10 +874,13 @@ test("fetchMoneyNumbers: a failed cap lookup never silences a real low-credit al
   // feature exists to give.
   const fetchImpl = async (url) => {
     if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 200 } }) };
-    if (url.includes("/billing/usage-history")) return { ok: false, status: 500 };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 0 } }] },
+      ] } } }) };
+    }
     if (url.includes("/ai-gateway/gateways")) return { ok: false, status: 500 };
     if (url.includes("/billing/spending-limit")) return { ok: false, status: 500 };
-    // The scope check: one gateway on the account, so its spend is the account's.
     if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
@@ -1208,24 +1101,8 @@ test("TESTER-F3 fetchMoneyNumbers: a transport failure logs a bounded path, neve
 // from account-wide spend it could not attribute. Account spend is always >= one
 // gateway's, so the error is always toward a FALSE RED: the alarm this feature
 // exists to make trustworthy.
-test("TESTER-F4 fetchMoneyNumbers: a gateway list that is not an array is unknown scope, not one gateway", async () => {
-  const env = { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct", AI_GATEWAY_ID: "openframe-estimator" };
-  const reply = (result) => ({ ok: true, status: 200, json: async () => ({ result }) });
-  const answer = async (url) => {
-    if (url.includes("credit-balance")) return reply({ balance: 30 });
-    if (url.includes("/gateways/")) return reply({ spend_limits: { enabled: true, rules: [{ limitType: "cost", limit: 20, window: 2592000 }] } });
-    // Cloudflare answers 200 but the shape is not the bare array this expects.
-    if (url.endsWith("/ai-gateway/gateways")) return reply({ gateways: [{ id: "a" }, { id: "b" }, { id: "c" }] });
-    if (url.includes("usage-history")) return reply({ history: [{ aggregated_value: 19 }] });
-    throw new Error(`unexpected ${url}`);
-  };
-  const { budget } = await fetchMoneyNumbers(env, answer);
-  assert.equal(
-    budget.available, false,
-    "an unreadable gateway list means the spend cannot be attributed; publishing 95% of the cap raises a red nobody can act on",
-  );
-  assert.equal(budget.reason, "spend_not_attributable");
-});
+// REMOVED: TESTER-F4 fetchMoneyNumbers: a gateway list that is not an array is unknown scope, not one gateway
+// the gateway-count probe is gone with the account-scoped spend source.
 
 // TESTER-F5 (round 5) — the red thresholds are read straight out of `vars` with
 // `Number(env.X ?? default)`, and `??` only catches an ABSENT var. This repo's
@@ -1284,8 +1161,10 @@ test("fetchMoneyNumbers: the credit balance is reported in CENTS", async () => {
     if (url.includes("/billing/credit-balance")) {
       return { ok: true, json: async () => ({ result: { balance: 428.066075 } }) };
     }
-    if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { history: [] } }) };
+    if (url.endsWith("/client/v4/graphql")) {
+      return { ok: true, json: async () => ({ data: { viewer: { accounts: [
+        { aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 0 } }] },
+      ] } } }) };
     }
     if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
     if (url.endsWith("/ai-gateway/gateways")) {
@@ -1330,43 +1209,71 @@ test("fetchMoneyNumbers: a failed call logs its HTTP status, not just the path",
   assert.doesNotMatch(logged, /acct1/);
 });
 
-test("fetchMoneyNumbers: the usage window is aligned, because the endpoint proxies Stripe", async () => {
-  // Cloudflare's usage-history is a thin proxy for Stripe's billing meter event
-  // summaries API — same parameter names, same day|hour enum, same
-  // {id, aggregated_value, start_time, end_time} response. Stripe requires the
-  // bounds to align: minute boundaries always, and hour boundaries for hourly
-  // granularity. Raw Date.now() instants align with nothing, and production
-  // answered HTTP 500 to every request for a week's worth of ticks — a status
-  // Cloudflare's own OpenAPI spec does not even declare.
-  let usageUrl = "";
-  const fetchImpl = async (url) => {
+// REMOVED: fetchMoneyNumbers: the usage window is aligned, because the endpoint proxies Stripe
+// that Stripe-proxying endpoint is no longer called; see the GraphQL window test.
+
+// --- Spend from GraphQL analytics, per gateway --------------------------------
+
+const gqlEnv = { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" };
+
+function capOnly(handler) {
+  // Everything except spend answers normally; `handler` decides the GraphQL reply.
+  return async (url, init) => {
     if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
-    if (url.includes("/billing/usage-history")) {
-      usageUrl = url;
-      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 250 }] } }) };
-    }
+    if (url.endsWith("/client/v4/graphql")) return handler(url, init);
     if (url.includes("/ai-gateway/gateways/")) {
       return {
         ok: true,
         json: async () => ({ result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } } }),
       };
     }
-    if (url.endsWith("/ai-gateway/gateways")) {
-      return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
-    }
     throw new Error(`unexpected url ${url}`);
   };
-  await fetchMoneyNumbers(
-    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
-    fetchImpl,
-  );
-  const params = new URL(usageUrl).searchParams;
-  const start = Number(params.get("start_time"));
-  const end = Number(params.get("end_time"));
-  const HOUR = 3600000;
-  assert.equal(params.get("value_grouping_window"), "hour");
-  assert.equal(start % HOUR, 0, "start_time must sit on an hour boundary");
-  assert.equal(end % HOUR, 0, "end_time must sit on an hour boundary");
-  assert.ok(end <= Date.now(), "end_time is never in the future");
-  assert.equal(Math.round((end - start) / (24 * HOUR)), 30, "still the cap's own 30-day window");
+}
+
+test("fetchMoneyNumbers: spend comes from the gateway's OWN analytics, over the cap's window", async () => {
+  // usage-history is account-scoped and cannot be filtered by gateway at all,
+  // which is why the old code had to prove the account held exactly one gateway
+  // before it dared publish a percentage. This dataset takes a gateway filter,
+  // so the question disappears rather than being answered.
+  let body = null;
+  const fetchImpl = capOnly(async (_url, init) => {
+    body = JSON.parse(init.body);
+    return {
+      ok: true,
+      json: async () => ({
+        data: { viewer: { accounts: [{ aiGatewayRequestsAdaptiveGroups: [{ sum: { cost: 12.5 } }] }] } },
+      }),
+    };
+  });
+  const result = await fetchMoneyNumbers(gqlEnv, fetchImpl);
+  assert.equal(result.budget.available, true);
+  assert.equal(result.budget.billedSpendUsd, 12.5);
+  assert.equal(result.budget.capUsd, 20);
+  assert.equal(body.variables.gateway, "gw1", "the query is scoped to THIS gateway");
+  const start = Date.parse(body.variables.start);
+  const end = Date.parse(body.variables.end);
+  assert.equal(Math.round((end - start) / 86400000), 30, "the cap's own 30-day window");
+  assert.equal(start % 3600000, 0, "datetimeHour bounds sit on the hour");
+});
+
+test("fetchMoneyNumbers: a gateway with no traffic in the window has spent nothing", async () => {
+  const fetchImpl = capOnly(async () => ({
+    ok: true,
+    json: async () => ({ data: { viewer: { accounts: [{ aiGatewayRequestsAdaptiveGroups: [] }] } } }),
+  }));
+  const result = await fetchMoneyNumbers(gqlEnv, fetchImpl);
+  assert.equal(result.budget.available, true);
+  assert.equal(result.budget.billedSpendUsd, 0);
+});
+
+test("fetchMoneyNumbers: a GraphQL error is a failure, even inside a 200", async () => {
+  // GraphQL answers 200 and puts the failure in the body, so `ok` proves nothing.
+  const fetchImpl = capOnly(async () => ({
+    ok: true,
+    json: async () => ({ errors: [{ message: "unauthorized" }], data: null }),
+  }));
+  const result = await fetchMoneyNumbers(gqlEnv, fetchImpl);
+  assert.equal(result.budget.available, false);
+  assert.equal(result.balance.available, true, "the balance is unaffected");
 });

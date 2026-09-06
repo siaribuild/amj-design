@@ -211,9 +211,7 @@ export function AttentionPage() {
             ? "Unavailable. No Cloudflare token configured"
             : reason === "account_id_missing"
               ? "Unavailable. No Cloudflare account configured"
-              : reason === "spend_not_attributable"
-                ? "Unavailable. More than one gateway shares this account's spend"
-                : `Unavailable. Cloudflare did not answer at ${asAt}`;
+              : `Unavailable. Cloudflare did not answer at ${asAt}`;
         const { balance, budget } = money;
         // Each card carries its OWN condition, both precomputed by the server
         // (UX §6.2 asks for red *flags*). One shared boolean reddened a healthy

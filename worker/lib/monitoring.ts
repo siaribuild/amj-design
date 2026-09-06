@@ -177,54 +177,7 @@ async function fetchBalance(env: Env, fetchImpl: typeof fetch): Promise<BalanceS
 async function fetchBudget(env: Env, fetchImpl: typeof fetch): Promise<BudgetSnapshot> {
   try {
     const cap = await fetchCap(env, fetchImpl);
-    // Scope only has to be proved for a GATEWAY cap. usage-history is
-    // account-wide, so an account-level cap is measured against account-level
-    // spend whatever the gateway count is — asking the question there blanked a
-    // cap card that was perfectly attributable.
-    //
-    // For a gateway cap it FAILS CLOSED: publish only when the answer
-    // positively says this account has exactly one gateway, because only then
-    // is the account's spend this gateway's spend. Anything else — a paginated
-    // object, a shape change, `result: null` from one of Cloudflare's
-    // soft-failure 200s — is an answer we cannot attribute.
-    if (cap.capSource === "gateway") {
-      const gateways = await cfGet(env, fetchImpl, "/ai-gateway/gateways");
-      if (!Array.isArray(gateways) || gateways.length !== 1) {
-        return { available: false, reason: "spend_not_attributable" };
-      }
-    }
-    // ALIGNED TO THE HOUR, both ends. This endpoint proxies Stripe's billing
-    // meter event summaries API — same parameter names, same day|hour enum,
-    // same {id, aggregated_value, start_time, end_time} response — and Stripe
-    // requires the bounds to align: minute boundaries always, hour boundaries
-    // for hourly granularity. Raw Date.now() instants align with nothing, and
-    // production answered HTTP 500 to every tick for a week, a status
-    // Cloudflare's own OpenAPI spec does not declare.
-    //
-    // Hourly rather than daily: daily alignment would force the window to end
-    // at last UTC midnight, hiding up to a day of spend from a budget gauge.
-    // This gives up only the current partial hour, and never asks for a future
-    // instant.
-    const HOUR_MS = 60 * 60 * 1000;
-    const end = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
-    const start = end - cap.windowDays * 24 * HOUR_MS;
-    // value_grouping_window is REQUIRED; without it this is a 400 and the money
-    // half of the console never works at all. The bounds are the cap's own
-    // window - unbounded, this summed the account's entire history against a
-    // thirty-day cap, so the percentage only ever climbed.
-    const usage = await cfGet(
-      env, fetchImpl,
-      `/ai-gateway/billing/usage-history?value_grouping_window=hour&start_time=${start}&end_time=${end}`,
-    );
-    // history[] is a series of windows, so the spend is their sum - there is no
-    // single total field. An EMPTY array is a real answer: a window with
-    // nothing billable in it. Only a missing or non-array history is malformed.
-    const history = usage?.history;
-    if (!Array.isArray(history)) throw new Error("missing usage history for /ai-gateway/");
-    const billedSpendUsd = history.reduce(
-      (total: number, entry: any) => total + requireNumber(entry?.aggregated_value, "aggregated_value"),
-      0,
-    );
+    const billedSpendUsd = await fetchSpendUsd(env, fetchImpl, cap.windowDays);
     return {
       available: true,
       billedSpendUsd,
@@ -235,6 +188,81 @@ async function fetchBudget(env: Env, fetchImpl: typeof fetch): Promise<BudgetSna
   } catch (err) {
     return { available: false, reason: logFailure(err) };
   }
+}
+
+const SPEND_QUERY = `query Spend($account: String!, $gateway: string!, $start: Time!, $end: Time!) {
+  viewer {
+    accounts(filter: { accountTag: $account }) {
+      aiGatewayRequestsAdaptiveGroups(
+        limit: 1
+        filter: { gateway: $gateway, datetimeHour_geq: $start, datetimeHour_leq: $end }
+      ) {
+        sum { cost }
+      }
+    }
+  }
+}`;
+
+/** What THIS gateway has spent over the cap's own window.
+ *
+ *  Not `/ai-gateway/billing/usage-history`, which this used to call, for three
+ *  reasons and the third is the one that matters:
+ *
+ *  1. That endpoint is account-scoped with no gateway parameter at all, so the
+ *     code had to prove the account held exactly one gateway before it dared
+ *     publish a percentage. Here the filter takes a gateway and the question
+ *     disappears rather than being answered.
+ *  2. It proxies Stripe's meter-summary API and inherits an alignment rule
+ *     Cloudflare documents nowhere; unaligned bounds answered HTTP 500 to every
+ *     request in production for a day.
+ *  3. It reports BILLED spend, while a spend limit is enforced against
+ *     Cloudflare's own cost estimate — token counts times model pricing, which
+ *     is exactly what `sum { cost }` returns. Dividing billed dollars by a cap
+ *     enforced on estimated dollars was comparing two different numbers.
+ *
+ *  The trade is that this figure is an estimate rather than an invoice line.
+ *  For "how close am I to the cap" that is the RIGHT number, because it is the
+ *  one the cap itself is measured in.
+ */
+async function fetchSpendUsd(env: Env, fetchImpl: typeof fetch, windowDays: number): Promise<number> {
+  // datetimeHour buckets, so the bounds are hours.
+  const HOUR_MS = 60 * 60 * 1000;
+  const endMs = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+  const variables = {
+    account: env.CF_ACCOUNT_ID,
+    gateway: env.AI_GATEWAY_ID,
+    start: new Date(endMs - windowDays * 24 * HOUR_MS).toISOString(),
+    end: new Date(endMs).toISOString(),
+  };
+
+  const url = "https://api.cloudflare.com/client/v4/graphql";
+  let res: Response;
+  try {
+    res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.CF_MONITORING_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ query: SPEND_QUERY, variables }),
+      signal: AbortSignal.timeout(Number(env.CF_TIMEOUT_MS ?? CF_TIMEOUT_MS)),
+    });
+  } catch {
+    throw new CfFailure("/graphql (spend)");
+  }
+  if (!res.ok) throw new CfFailure("/graphql (spend)", res.status);
+
+  // GraphQL answers 200 and puts the failure in the body, so `ok` proves
+  // nothing on its own.
+  const body = await res.json<{ data?: any; errors?: unknown[] }>();
+  if (body?.errors?.length) throw new CfFailure("/graphql (spend, errors in body)");
+  const groups = body?.data?.viewer?.accounts?.[0]?.aiGatewayRequestsAdaptiveGroups;
+  if (!Array.isArray(groups)) throw new CfFailure("/graphql (spend, unexpected shape)");
+  // No groups is a real answer: this gateway served nothing in the window.
+  return groups.reduce(
+    (total: number, g: any) => total + requireNumber(g?.sum?.cost, "sum.cost"),
+    0,
+  );
 }
 
 async function fetchCap(
