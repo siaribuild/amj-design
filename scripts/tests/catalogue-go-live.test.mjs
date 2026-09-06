@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { run, resolveToken } from "../catalogue/apply-go-live-min.mjs";
+import { run, resolveToken, loadWorld } from "../catalogue/apply-go-live-min.mjs";
 import { plan, assertSafe, DISABLE, KEEP_PUBLISHED, alignHardware, buildDimensionRule, P, NEW_PROFILES, HW, DEFAULT_COLOUR, buildSpecs, buildKeySpecs, same } from "../catalogue/go-live-plan.mjs";
 import { makeWorld, makeTransport, altered } from "./fixtures/go-live-world.mjs";
 
@@ -466,47 +466,85 @@ test("run({verify:true}): a missing sheet product is a verify failure that names
 });
 
 // T5: rate-cards.sql is read-only in this suite (file never written to) —
-// scan its text for the go-live-min safety criteria (21, 23, 33).
+// scan its text for the go-live-min safety criteria: 22 upserts (production
+// already holds 4 of these ids, so a bare INSERT would collide), each
+// starting a new card at v1 and bumping an existing one, glass excluded from
+// the area rate reset to 0.
 const RATE_CARDS_SQL_PATH = fileURLToPath(new URL("../../docs/runs/catalogue-go-live-min/rate-cards.sql", import.meta.url));
 const rateCardsSql = readFileSync(RATE_CARDS_SQL_PATH, "utf8");
 const rateCardsNoComments = rateCardsSql.replace(/--.*$/gm, "");
+const rateCardsStatements = rateCardsNoComments.split(";").map((s) => s.trim()).filter(Boolean);
 
 test("rate-cards.sql: no DELETE/DROP/ALTER/CREATE TABLE token once comments are stripped", () => {
   assert.doesNotMatch(rateCardsNoComments, /\b(DELETE|DROP|ALTER|CREATE TABLE)\b/i);
 });
 
-test("rate-cards.sql: every statement targets only UPDATE or INSERT INTO pricing_rate_card", () => {
-  const statements = rateCardsNoComments.split(";").map((s) => s.trim()).filter(Boolean);
-  assert.ok(statements.length > 0);
-  for (const stmt of statements) {
-    assert.ok(
-      /^UPDATE pricing_rate_card\b/i.test(stmt) || /^INSERT INTO pricing_rate_card\b/i.test(stmt),
-      stmt,
-    );
+test("rate-cards.sql: exactly 22 upserts on pricing_rate_card, ids = the 22 sheet slugs", () => {
+  assert.equal(rateCardsStatements.length, 22, rateCardsStatements.length);
+  const sheetSlugs = new Set(P.map((p) => p.slug));
+  assert.equal(sheetSlugs.size, 22, sheetSlugs.size);
+  for (const stmt of rateCardsStatements) {
+    assert.match(stmt, /^INSERT INTO pricing_rate_card\b/i, stmt);
+    assert.match(stmt, /ON CONFLICT\(id\) DO UPDATE\b/i, stmt);
+    const id = stmt.match(/VALUES\s*\('([^']+)'/i)?.[1];
+    assert.ok(id && sheetSlugs.has(id), stmt);
   }
 });
 
-test("rate-cards.sql: every UPDATE carries the version-bump expression and updated_at", () => {
-  const VERSION_BUMP = `'v' || (CAST(substr(version, 2) AS INTEGER) + 1)`;
-  const updates = rateCardsNoComments.split(";").map((s) => s.trim()).filter((s) => /^UPDATE pricing_rate_card\b/i.test(s));
-  assert.ok(updates.length > 0);
-  for (const stmt of updates) {
+test("rate-cards.sql: every statement starts the card at 'v1' and bumps an existing card's version on conflict", () => {
+  const VERSION_BUMP = `'v' || (CAST(substr(pricing_rate_card.version, 2) AS INTEGER) + 1)`;
+  for (const stmt of rateCardsStatements) {
+    const values = stmt.match(/VALUES\s*(\([^()]*\))/i)?.[1];
+    assert.ok(values && /'v1'/.test(values), stmt);
     assert.ok(stmt.includes(VERSION_BUMP), stmt);
     assert.ok(stmt.includes("updated_at = datetime('now')"), stmt);
   }
 });
 
-test("rate-cards.sql: the INSERT block starts every new row at 'v1'", () => {
-  const insertBlock = rateCardsNoComments.split(";").map((s) => s.trim()).find((s) => /^INSERT INTO pricing_rate_card\b/i.test(s));
-  assert.ok(insertBlock);
-  const rows = insertBlock.match(/\([^()]*\)/g).slice(1); // drop the column list, keep VALUES rows
-  assert.ok(rows.length > 0);
-  for (const row of rows) assert.match(row, /'v1'/);
+test("rate-cards.sql: every statement resets glass_excluded_from_area_rate to 0 on both insert and conflict", () => {
+  for (const stmt of rateCardsStatements) {
+    const [values, doUpdate] = stmt.split(/ON CONFLICT/i);
+    assert.match(values, /glass_excluded_from_area_rate\)\s*VALUES\s*\([^)]*,\s*0\)/i, stmt);
+    assert.match(doUpdate, /glass_excluded_from_area_rate = 0\b/i, stmt);
+  }
 });
 
 test("rate-cards.sql: 354.64 present, 322.40 (the ÷1.1 mistake) absent", () => {
   assert.ok(rateCardsSql.includes("354.64"));
   assert.ok(!rateCardsSql.includes("322.40"));
+});
+
+// FIX-3 item 2: loadWorld must drop draft entries before they reach the plan
+// — a draft frameSystem sharing a published slug must never win the
+// systemId map (Map dedup keeps the last entry for a repeated slug key).
+test("loadWorld drops drafts: a draft frameSystem never wins over its published twin", async () => {
+  const world = makeWorld();
+  world.systems = [...world.systems, { _id: "drafts.frameSystem-sys-80", slug: "sys-80" }];
+  const { fetchImpl } = makeTransport(world);
+  const loaded = await loadWorld({ fetchImpl, token: null });
+  assert.ok(!loaded.systems.some((s) => s._id.startsWith("drafts.")), JSON.stringify(loaded.systems));
+  const { mutations, problems } = plan(loaded);
+  assert.deepEqual(problems, []);
+  const awning = mutations.find((m) => m.patch?.id === "product-amj72t-awning-window");
+  assert.equal(awning.patch.set.frameSystem._ref, "system-80");
+});
+
+// FIX-3 item 3: a fetched product with no slug must not throw building the
+// slug map, and must not silently vanish — it becomes a named problem.
+test("loadWorld: a product with no slug becomes a named problem, not a crash or a silent drop", async () => {
+  const world = makeWorld();
+  const { fetchImpl } = makeTransport(world);
+  const patchedFetch = async (url, init) => {
+    const res = await fetchImpl(url, init);
+    const isProductQuery = (init?.method ?? "GET") !== "POST" && (new URL(url).searchParams.get("query") ?? "").includes("familyName");
+    if (!isProductQuery) return res;
+    const body = await res.json();
+    body.result = [...body.result, { _id: "product-no-slug", slug: null, familyName: "x", categoryName: "y" }];
+    return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
+  };
+  const loaded = await loadWorld({ fetchImpl: patchedFetch, token: null });
+  const { problems } = plan(loaded);
+  assert.ok(problems.some((p) => p.includes("product-no-slug")), JSON.stringify(problems));
 });
 
 test("source scan: apply-go-live-min.mjs and go-live-plan.mjs never mention child_process or wrangler", () => {

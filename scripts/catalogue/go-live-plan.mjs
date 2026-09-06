@@ -467,6 +467,8 @@ function plan(world) {
   let amend = 0;
   let create = 0;
 
+  for (const id of world.missingSlug ?? []) problems.push(`product ${id}: missing slug`);
+
   // 1. glazing options — only if absent.
   for (const g of NEW_GLAZINGS) {
     if (!ids.has(g._id)) { mutations.push({ createIfNotExists: g }); report.push(`create glazing option ${g._id}`); }
