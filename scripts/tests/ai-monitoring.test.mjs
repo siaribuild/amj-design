@@ -372,7 +372,7 @@ test("writeMonitoringSnapshot: CF failure still writes fresh D1 counts with mone
 test("fetchMoneyNumbers: gateway cap failure falls back to spending-limit with capSource 'account'", async () => {
   const fetchImpl = async (url) => {
     if (url.includes("/billing/credit-balance")) {
-      return { ok: true, json: async () => ({ result: { balance: 12.34 } }) };
+      return { ok: true, json: async () => ({ result: { balance: 1234 } }) };
     }
     // Cloudflare's documented shapes, not the ones this fixture first assumed:
     // usage is history[].aggregated_value, and the account cap is
@@ -637,7 +637,7 @@ test("fetchMoneyNumbers: decodes the documented Cloudflare response shapes", asy
   const fetchImpl = async (url) => {
     seen.push(url);
     if (url.includes("/billing/credit-balance")) {
-      return { ok: true, json: async () => ({ result: { balance: 12.34, has_default_payment_method: true } }) };
+      return { ok: true, json: async () => ({ result: { balance: 1234, has_default_payment_method: true } }) };
     }
     if (url.includes("/billing/usage-history")) {
       return {
@@ -706,7 +706,7 @@ test("fetchMoneyNumbers: the gateway cap is the unscoped cost rule, not simply t
   // provider or metadata key. A scoped rule is a cap on part of the traffic,
   // so reporting it as THE cap understates the budget the console claims.
   const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 50 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
     if (url.includes("/billing/usage-history")) {
       return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 1 }] } }) };
     }
@@ -743,7 +743,7 @@ test("fetchMoneyNumbers: the account fallback converts cents to dollars", async 
   // that unit is CENTS (the paired POST says so). Reported raw it was a 100x
   // overstatement of the cap.
   const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 12.34 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 1234 } }) };
     if (url.includes("/billing/usage-history")) {
       return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 8 }] } }) };
     }
@@ -784,7 +784,7 @@ test("fetchMoneyNumbers: an empty usage history is zero spend, not a broken snap
   // them the low-credit warning, in exactly the quiet month where the console
   // has least else to say.
   const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 3 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 300 } }) };
     if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: { history: [] } }) };
     if (url.includes("/ai-gateway/gateways/")) {
       return {
@@ -810,7 +810,7 @@ test("fetchMoneyNumbers: an empty usage history is zero spend, not a broken snap
 
 test("fetchMoneyNumbers: a usage response with no history array at all is still malformed", async () => {
   const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 3 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 300 } }) };
     if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: {} }) };
     if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
     if (url.includes("/billing/spending-limit")) return { ok: false, status: 404 };
@@ -830,7 +830,7 @@ test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
   // cap nothing is enforcing, and can raise a red over a budget that is not
   // actually capped.
   const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 50 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
     if (url.includes("/billing/usage-history")) {
       return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 19 }] } }) };
     }
@@ -908,7 +908,7 @@ test("fetchMoneyNumbers: usage is asked for over the cap's OWN window, not all t
   const seen = [];
   const fetchImpl = async (url) => {
     seen.push(url);
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 50 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
     if (url.includes("/billing/usage-history")) {
       return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 4 }] } }) };
     }
@@ -947,7 +947,7 @@ test("fetchMoneyNumbers: a second gateway makes the cap percentage unattributabl
   // gateway the account's spend is that gateway's spend; with two it is not,
   // and dividing it by one gateway's cap overstates the percentage.
   const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 3 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 300 } }) };
     if (url.includes("/billing/usage-history")) {
       return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 4 }] } }) };
     }
@@ -983,7 +983,7 @@ test("fetchMoneyNumbers: a failed cap lookup never silences a real low-credit al
   // because the cap endpoint blipped — suppressing the outage warning this
   // feature exists to give.
   const fetchImpl = async (url) => {
-    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 2 } }) };
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 200 } }) };
     if (url.includes("/billing/usage-history")) return { ok: false, status: 500 };
     if (url.includes("/ai-gateway/gateways")) return { ok: false, status: 500 };
     if (url.includes("/billing/spending-limit")) return { ok: false, status: 500 };
@@ -1267,4 +1267,65 @@ test("TESTER-F5 monitoringPayload: an unreadable threshold var falls back to the
       `${label}: floorUsd must cross the wire as a real number — NaN serialises to null and the client discards the whole snapshot`,
     );
   }
+});
+
+// --- Production evidence, 2026-09-06 -----------------------------------------
+
+test("fetchMoneyNumbers: the credit balance is reported in CENTS", async () => {
+  // OWNER-CONFIRMED against the Cloudflare dashboard: a real balance of $4.28
+  // was published by this code as $428.07. Cloudflare documents no unit for
+  // `balance`, and the assumption ledger recorded dollars as unverified — it
+  // was wrong. The unit is cents, like `config.amount` beside it.
+  //
+  // The direction mattered: $4.28 is BELOW the $5 floor and should have been
+  // red, and the hundredfold reading put it far above, so the one alarm this
+  // feature exists to raise stayed silent on the day it was due.
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) {
+      return { ok: true, json: async () => ({ result: { balance: 428.066075 } }) };
+    }
+    if (url.includes("/billing/usage-history")) {
+      return { ok: true, json: async () => ({ result: { history: [] } }) };
+    }
+    if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
+    if (url.endsWith("/ai-gateway/gateways")) {
+      return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
+    }
+    if (url.includes("/billing/spending-limit")) return { ok: false, status: 404 };
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.equal(result.balance.available, true);
+  assert.ok(
+    Math.abs(result.balance.creditBalanceUsd - 4.28066075) < 1e-9,
+    `428.066075 cents is $4.28, got ${result.balance.creditBalanceUsd}`,
+  );
+  // And at that balance the floor alarm fires, which is the whole point.
+  assert.equal(evaluateRedFlags({ money: result }, 5, 80).balance, true);
+});
+
+test("fetchMoneyNumbers: a failed call logs its HTTP status, not just the path", async () => {
+  // The path alone could not say WHY: a 403 (scope), a 400 (bad parameter) and
+  // a 404 (wrong endpoint) all logged one indistinguishable line, which is what
+  // made the live usage-history failure undiagnosable from the logs. A status
+  // code is a number — it cannot carry a URL, a token or a header.
+  const lines = [];
+  const realLog = console.log;
+  console.log = (...args) => lines.push(args.join(" "));
+  try {
+    await fetchMoneyNumbers(
+      { CF_MONITORING_TOKEN: "super-secret", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+      async () => ({ ok: false, status: 403 }),
+    );
+  } finally {
+    console.log = realLog;
+  }
+  const logged = lines.join("\n");
+  assert.match(logged, /status 403/, "the status code must reach the log");
+  assert.doesNotMatch(logged, /super-secret/);
+  assert.doesNotMatch(logged, /api\.cloudflare\.com/);
+  assert.doesNotMatch(logged, /acct1/);
 });

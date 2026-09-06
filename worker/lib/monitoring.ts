@@ -35,7 +35,7 @@ export async function writeMonitoringSnapshot(env: Env, fetchImpl: typeof fetch 
  *  protocol, and a message this module did not compose cannot be mistaken for
  *  one it did. */
 class CfFailure extends Error {
-  constructor(readonly pathSuffix: string, status?: number) {
+  constructor(readonly pathSuffix: string, readonly status?: number) {
     super(status ? `status ${status} for ${pathSuffix}` : `request failed for ${pathSuffix}`);
   }
 }
@@ -139,15 +139,25 @@ function logFailure(err: unknown): "fetch_failed" {
   // ever printed. Anything else — an error from a dependency, a bug in here —
   // logs nothing but "?", so a log line cannot carry a URL, an account id or a
   // header whoever composed it. The guarantee is the TYPE, not a string parse.
+  // The status is a NUMBER — it cannot carry a URL, a token or a header — and
+  // without it a 403 (scope), a 400 (bad parameter) and a 404 (wrong endpoint)
+  // all logged one indistinguishable line. That is what made the live
+  // usage-history failure impossible to diagnose from the logs.
   const path = err instanceof CfFailure ? err.pathSuffix : "?";
-  console.log(`ai-parse monitoring: CF fetch failed for ${path}`);
+  const status = err instanceof CfFailure && err.status ? `status ${err.status} ` : "";
+  console.log(`ai-parse monitoring: CF fetch failed — ${status}for ${path}`);
   return "fetch_failed";
 }
 
 async function fetchBalance(env: Env, fetchImpl: typeof fetch): Promise<BalanceSnapshot> {
   try {
     const balance = await cfGet(env, fetchImpl, "/ai-gateway/billing/credit-balance");
-    return { available: true, creditBalanceUsd: requireNumber(balance?.balance, "balance") };
+    // CENTS, like config.amount beside it. Confirmed against the Cloudflare
+    // dashboard 2026-09-06: a real $4.28 balance was published as $428.07.
+    // Cloudflare documents no unit for this field anywhere, and the direction
+    // of the error was the dangerous one — it put a balance BELOW the $5 floor
+    // far above it, so the low-credit alarm stayed silent on the day it was due.
+    return { available: true, creditBalanceUsd: requireNumber(balance?.balance, "balance") / 100 };
   } catch (err) {
     return { available: false, reason: logFailure(err) };
   }
